@@ -22,7 +22,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.0.1
+  flutter_crop_camera: ^0.0.2
 ```
 
 ## Usage
@@ -72,10 +72,17 @@ Add camera permissions to your `AndroidManifest.xml`:
 ```
 
 ### iOS
-Add camera usage description to your `Info.plist`:
+Requires **iOS 13.0** or higher.
+
+Add the following key to your `Info.plist` file to allow camera access:
 ```xml
 <key>NSCameraUsageDescription</key>
 <string>We need camera access to take and crop photos.</string>
+```
+
+Ensure your `Podfile` platform is set to at least 13.0:
+```ruby
+platform :ios, '13.0'
 ```
 
 ## License
