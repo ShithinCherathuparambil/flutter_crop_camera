@@ -1,0 +1,86 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_crop_camera/src/crop_editor.dart';
+
+void main() {
+  late File testFile;
+
+  setUpAll(() async {
+    // Generate a valid 1x1 PNG dynamically
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 1, 1),
+      Paint()..color = Colors.black,
+    );
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(1, 1);
+    final ByteData? byteData = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
+    final Uint8List bytes = byteData!.buffer.asUint8List();
+
+    testFile = File('${Directory.systemTemp.path}/test_crop_editor.png');
+    await testFile.writeAsBytes(bytes);
+  });
+
+  tearDownAll(() async {
+    try {
+      if (await testFile.exists()) await testFile.delete();
+    } catch (_) {}
+  });
+
+  Widget buildTestWidget({bool showGrid = true, bool lockAspectRatio = false}) {
+    return MaterialApp(
+      home: CropEditor(
+        file: testFile,
+        onCrop: (x, y, w, h, roll, flip) {},
+        showGrid: showGrid,
+        lockAspectRatio: lockAspectRatio,
+      ),
+    );
+  }
+
+  Future<void> waitForImage(WidgetTester tester) async {
+    await tester.pump(); // Trigger initState
+
+    await tester.runAsync(() async {
+      await Future.delayed(const Duration(milliseconds: 500));
+    });
+
+    await tester.pump();
+
+    for (int i = 0; i < 20; i++) {
+      if (find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  group('CropEditor Widget Tests', () {
+    testWidgets('renders toolbar after loading', (tester) async {
+      await tester.pumpWidget(buildTestWidget());
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      await waitForImage(tester);
+      expect(find.byKey(const Key('crop_reset_button')), findsOneWidget);
+      expect(find.byKey(const Key('crop_grid_button')), findsOneWidget);
+    });
+
+    testWidgets('toggle grid updates icon', (tester) async {
+      await tester.pumpWidget(buildTestWidget(showGrid: true));
+      await waitForImage(tester);
+      expect(find.byIcon(Icons.grid_on), findsOneWidget);
+      await tester.tap(find.byKey(const Key('crop_grid_button')));
+      await tester.pump();
+      expect(find.byIcon(Icons.grid_off), findsOneWidget);
+    });
+
+    testWidgets('lockAspectRatio hides ratio buttons', (tester) async {
+      await tester.pumpWidget(buildTestWidget(lockAspectRatio: true));
+      await waitForImage(tester);
+      expect(find.text('Original'), findsNothing);
+    });
+  });
+}

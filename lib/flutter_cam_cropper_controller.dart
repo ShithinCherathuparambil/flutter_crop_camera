@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
 
-class FlutterCropCameraController {
-  static const MethodChannel _channel = MethodChannel('flutter_crop_camera');
+class FlutterCamCropperController {
+  static const MethodChannel _channel = MethodChannel('flutter_cam_cropper');
 
   int? textureId;
 

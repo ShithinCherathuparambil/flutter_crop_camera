@@ -49,13 +49,17 @@ class _CropEditorState extends State<CropEditor> {
   }
 
   Future<void> _loadImage() async {
-    final data = await widget.file.readAsBytes();
-    final image = await decodeImageFromList(data);
-    if (mounted) {
-      setState(() {
-        _image = image;
-        _loading = false;
-      });
+    try {
+      final data = await widget.file.readAsBytes();
+      final image = await decodeImageFromList(data);
+      if (mounted) {
+        setState(() {
+          _image = image;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("CropEditor: Error loading image: $e");
     }
   }
 
@@ -281,11 +285,13 @@ class _CropEditorState extends State<CropEditor> {
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
                     IconButton(
+                      key: const Key('crop_reset_button'),
                       icon: const Icon(Icons.refresh, color: Colors.white54),
                       onPressed: _reset,
                       tooltip: "Reset",
                     ),
                     IconButton(
+                      key: const Key('crop_grid_button'),
                       icon: Icon(
                         _showGrid ? Icons.grid_on : Icons.grid_off,
                         color: Colors.white,
@@ -298,6 +304,7 @@ class _CropEditorState extends State<CropEditor> {
                       tooltip: "Toggle Grid",
                     ),
                     IconButton(
+                      key: const Key('crop_rotate_button'),
                       icon: const Icon(Icons.rotate_left, color: Colors.white),
                       onPressed: () {
                         setState(() {
@@ -309,6 +316,7 @@ class _CropEditorState extends State<CropEditor> {
                       tooltip: "Rotate",
                     ),
                     IconButton(
+                      key: const Key('crop_mirror_button'),
                       icon: const Icon(Icons.flip, color: Colors.white),
                       onPressed: () {
                         setState(() {
@@ -318,6 +326,7 @@ class _CropEditorState extends State<CropEditor> {
                       tooltip: "Mirror",
                     ),
                     IconButton(
+                      key: const Key('crop_close_button'),
                       icon: const Icon(
                         Icons.close,
                         color: Colors.redAccent,
@@ -326,6 +335,7 @@ class _CropEditorState extends State<CropEditor> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     IconButton(
+                      key: const Key('crop_check_button'),
                       icon: const Icon(
                         Icons.check,
                         color: Colors.cyanAccent,
@@ -354,6 +364,7 @@ class _CropEditorState extends State<CropEditor> {
     return Padding(
       padding: const EdgeInsets.only(right: 15),
       child: GestureDetector(
+        key: Key('ratio_$label'),
         onTap: () {
           setState(() {
             _aspectRatio = ratio;
@@ -362,6 +373,7 @@ class _CropEditorState extends State<CropEditor> {
           });
         },
         child: Container(
+          key: Key('ratio_$label'),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected ? Colors.cyanAccent : Colors.transparent,

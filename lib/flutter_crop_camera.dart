@@ -248,7 +248,6 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     if (!_isInit) {
       return const Center(child: CircularProgressIndicator());
     }
-    print("FlutterCropCamera BUILD: initialCamera=${widget.initialCamera}");
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -277,6 +276,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     GestureDetector(
+                      key: const Key('flash_button'),
                       onTap: _toggleFlash,
                       child: Icon(_getFlashIcon(), color: Colors.white),
                     ),
@@ -322,6 +322,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                       children: [1, 2, 3].map((zoom) {
                         final isSelected = _currentZoom == zoom.toDouble();
                         return GestureDetector(
+                          key: Key('zoom_${zoom}x'),
                           onTap: () {
                             setState(() {
                               _currentZoom = zoom.toDouble();
@@ -357,6 +358,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                         shrinkWrap: true,
                         children: [
                           _ModeItem(
+                            key: const Key('mode_photo'),
                             text: "PHOTO",
                             isSelected: _selectedMode == "PHOTO",
                             onTap: () => _onModeSelected("PHOTO"),
@@ -380,6 +382,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
 
                         // Shutter Button
                         GestureDetector(
+                          key: const Key('shutter_button'),
                           onTap: _capture,
                           child: Container(
                             width: 80,
@@ -404,6 +407,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
 
                         // Switch Camera
                         GestureDetector(
+                          key: const Key('switch_camera_button'),
                           onTap: () async {
                             await _controller.switchCamera();
                             setState(() {
@@ -443,6 +447,7 @@ class _ModeItem extends StatelessWidget {
   final VoidCallback onTap;
 
   const _ModeItem({
+    super.key,
     required this.text,
     this.isSelected = false,
     required this.onTap,
