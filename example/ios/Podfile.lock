@@ -1,28 +1,34 @@
 PODS:
   - Flutter (1.0.0)
-  - flutter_cam_cropper (0.0.1):
+  - flutter_crop_camera (0.0.1):
     - Flutter
   - integration_test (0.0.1):
+    - Flutter
+  - permission_handler_apple (9.3.0):
     - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
-  - flutter_cam_cropper (from `.symlinks/plugins/flutter_cam_cropper/ios`)
+  - flutter_crop_camera (from `.symlinks/plugins/flutter_crop_camera/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
 
 EXTERNAL SOURCES:
   Flutter:
     :path: Flutter
-  flutter_cam_cropper:
-    :path: ".symlinks/plugins/flutter_cam_cropper/ios"
+  flutter_crop_camera:
+    :path: ".symlinks/plugins/flutter_crop_camera/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
 
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
-  flutter_cam_cropper: 2d2f1a22cd6d077a9e14bdf934e2a47ec4e0a6c4
+  flutter_crop_camera: b9b4e5c189b3f186c16d1950727b9cc7ee42e5d0
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  permission_handler_apple: 4ed2196e43d0651e8ff7ca3483a069d469701f2d
 
-PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+PODFILE CHECKSUM: c11f0067b831d0a3f19f215d5131389772c22330
 
 COCOAPODS: 1.16.2

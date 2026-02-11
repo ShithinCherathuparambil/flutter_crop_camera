@@ -76,11 +76,18 @@ class _HomePageState extends State<HomePage> {
             const Expanded(child: Center(child: Text("No image captured"))),
           ElevatedButton(
             onPressed: () async {
-              // 1. Request camera permission using permission_handler.
-              final status = await Permission.camera.request();
+              // 1. Check current permission status
+              var status = await Permission.camera.status;
+
+              // 2. If permission is not granted, request it
+              if (!status.isGranted) {
+                status = await Permission.camera.request();
+              }
+
+              // 3. Handle the permission result
               if (status.isGranted) {
                 if (context.mounted) {
-                  // 2. Navigate to a new screen containing the FlutterCropCamera widget.
+                  // Navigate to camera screen
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -95,13 +102,10 @@ class _HomePageState extends State<HomePage> {
                           screenOrientations: const [
                             DeviceOrientation.portraitUp,
                           ], // Lock to portrait
-                          // 3. This callback is executed when the user takes a photo
-                          // (and optionally finishes cropping).
                           onImageCaptured: (file) {
                             setState(() {
-                              _capturedImage = file; // Save the reference
+                              _capturedImage = file;
                             });
-                            // 4. Close the camera screen to return to home.
                             Navigator.pop(context);
                           },
                         ),
@@ -109,11 +113,33 @@ class _HomePageState extends State<HomePage> {
                     ),
                   );
                 }
-              } else {
+              } else if (status.isDenied) {
+                // Permission denied, but can request again
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Camera permission is required'),
+                      content: Text(
+                        'Camera permission is required to use this feature',
+                      ),
+                      duration: Duration(seconds: 3),
+                    ),
+                  );
+                }
+              } else if (status.isPermanentlyDenied) {
+                // Permission permanently denied, guide user to settings
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text(
+                        'Camera permission is permanently denied. Please enable it in settings.',
+                      ),
+                      duration: const Duration(seconds: 5),
+                      action: SnackBarAction(
+                        label: 'Open Settings',
+                        onPressed: () {
+                          openAppSettings();
+                        },
+                      ),
                     ),
                   );
                 }

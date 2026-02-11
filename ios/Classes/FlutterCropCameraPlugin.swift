@@ -30,7 +30,9 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
                let y = args["y"] as? Int,
                let width = args["width"] as? Int,
                let height = args["height"] as? Int {
-                cropImage(path: path, x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height), result: result)
+                let rotationDegrees = args["rotationDegrees"] as? Int ?? 0
+                let flipX = args["flipX"] as? Bool ?? false
+                cropImage(path: path, x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height), rotationDegrees: rotationDegrees, flipX: flipX, result: result)
             } else {
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
             }
@@ -46,6 +48,13 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             }
         case "switchCamera":
              switchCamera(result: result)
+        case "setFlashMode":
+            if let args = call.arguments as? [String: Any],
+               let mode = args["mode"] as? String {
+                setFlashMode(mode: mode, result: result)
+            } else {
+                result(FlutterError(code: "INVALID_ARGS", message: "Missing flash mode argument", details: nil))
+            }
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -75,6 +84,13 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
         videoOutput?.setSampleBufferDelegate(self, queue: DispatchQueue(label: "camera_queue"))
         if let videoOutput = videoOutput, session.canAddOutput(videoOutput) {
             session.addOutput(videoOutput)
+            
+            // Set video orientation to portrait to match device orientation
+            if let connection = videoOutput.connection(with: .video) {
+                if connection.isVideoOrientationSupported {
+                    connection.videoOrientation = .portrait
+                }
+            }
         }
         
         photoOutput = AVCapturePhotoOutput()
@@ -135,6 +151,55 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
         // Keep reference to delegate so it's not deallocated
         objc_setAssociatedObject(self, "PhotoCaptureDelegate", delegate, .OBJC_ASSOCIATION_RETAIN)
         photoOutput.capturePhoto(with: settings, delegate: delegate)
+    }
+    
+    func setFlashMode(mode: String, result: @escaping FlutterResult) {
+        guard let device = currentDevice else {
+            result(FlutterError(code: "CAMERA_ERROR", message: "Camera not initialized", details: nil))
+            return
+        }
+        
+        // Check if device has flash
+        guard device.hasFlash else {
+            // No flash available, just return success silently
+            result(nil)
+            return
+        }
+        
+        do {
+            try device.lockForConfiguration()
+            
+            switch mode {
+            case "off":
+                if device.isFlashModeSupported(.off) {
+                    device.flashMode = .off
+                }
+                if device.isTorchModeSupported(.off) {
+                    device.torchMode = .off
+                }
+            case "on":
+                if device.isFlashModeSupported(.on) {
+                    device.flashMode = .on
+                }
+            case "auto":
+                if device.isFlashModeSupported(.auto) {
+                    device.flashMode = .auto
+                }
+            case "torch":
+                if device.isTorchModeSupported(.on) {
+                    device.torchMode = .on
+                }
+            default:
+                device.unlockForConfiguration()
+                result(FlutterError(code: "INVALID_FLASH_MODE", message: "Invalid flash mode: \(mode)", details: nil))
+                return
+            }
+            
+            device.unlockForConfiguration()
+            result(nil)
+        } catch {
+            result(FlutterError(code: "FLASH_ERROR", message: "Failed to set flash mode: \(error)", details: nil))
+        }
     }
     
     func setZoom(zoom: CGFloat, result: @escaping FlutterResult) {
@@ -211,21 +276,83 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    func cropImage(path: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, result: @escaping FlutterResult) {
-        guard let image = UIImage(contentsOfFile: path),
-              let cgImage = image.cgImage else {
+    func cropImage(path: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rotationDegrees: Int, flipX: Bool, result: @escaping FlutterResult) {
+        guard let image = UIImage(contentsOfFile: path) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to load image", details: nil))
             return
         }
         
+        // Step 1: Normalize EXIF orientation first (like Android does)
+        // This converts the image to .up orientation by applying the EXIF rotation
+        let normalizedImage: UIImage
+        if image.imageOrientation == .up {
+            normalizedImage = image
+        } else {
+            UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+            normalizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
+            UIGraphicsEndImageContext()
+        }
+        
+        // Step 2: Apply user transformations (rotation + flip) to the normalized image
+        var transformedImage = normalizedImage
+        
+        if rotationDegrees != 0 || flipX {
+            // Calculate size after user rotation
+            let radians = CGFloat(rotationDegrees) * .pi / 180.0
+            let rotatedSize: CGSize
+            
+            if rotationDegrees == 90 || rotationDegrees == 270 {
+                rotatedSize = CGSize(width: normalizedImage.size.height, height: normalizedImage.size.width)
+            } else {
+                rotatedSize = normalizedImage.size
+            }
+            
+            // Create graphics context for user transformation
+            UIGraphicsBeginImageContextWithOptions(rotatedSize, false, normalizedImage.scale)
+            guard let context = UIGraphicsGetCurrentContext() else {
+                result(FlutterError(code: "CROP_ERROR", message: "Failed to create graphics context", details: nil))
+                return
+            }
+            
+            // Move origin to center
+            context.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
+            
+            // Apply user rotation
+            context.rotate(by: radians)
+            
+            // Apply flip if needed
+            if flipX {
+                context.scaleBy(x: -1, y: 1)
+            }
+            
+            // Draw the normalized image centered
+            normalizedImage.draw(in: CGRect(
+                x: -normalizedImage.size.width / 2,
+                y: -normalizedImage.size.height / 2,
+                width: normalizedImage.size.width,
+                height: normalizedImage.size.height
+            ))
+            
+            transformedImage = UIGraphicsGetImageFromCurrentImageContext() ?? normalizedImage
+            UIGraphicsEndImageContext()
+        }
+        
+        // Step 3: Crop the transformed image
+        guard let transformedCgImage = transformedImage.cgImage else {
+            result(FlutterError(code: "CROP_ERROR", message: "Failed to get CGImage", details: nil))
+            return
+        }
+        
         let rect = CGRect(x: x, y: y, width: width, height: height)
-        guard let croppedCgImage = cgImage.cropping(to: rect) else {
+        guard let croppedCgImage = transformedCgImage.cropping(to: rect) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to crop image", details: nil))
             return
         }
         
-        let croppedImage = UIImage(cgImage: croppedCgImage, scale: image.scale, orientation: image.imageOrientation)
+        let croppedImage = UIImage(cgImage: croppedCgImage, scale: transformedImage.scale, orientation: .up)
         
+        // Step 4: Save the cropped image
         guard let data = croppedImage.jpegData(compressionQuality: 1.0) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to compress image", details: nil))
             return
