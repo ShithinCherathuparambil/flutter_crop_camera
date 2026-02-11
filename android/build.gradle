@@ -1,4 +1,4 @@
-group = "com.example.flutter_crop_camera"
+group = "com.crop.camera"
 version = "1.0-SNAPSHOT"
 
 buildscript {
@@ -25,7 +25,7 @@ apply plugin: "com.android.library"
 apply plugin: "kotlin-android"
 
 android {
-    namespace = "com.example.flutter_crop_camera"
+    namespace = "com.crop.camera"
 
     compileSdk = 36
 

@@ -40,7 +40,7 @@ flutter:
     # https://flutter.dev/to/pubspec-plugin-platforms
     # -------------------
       android:
-        package: com.example.flutter_crop_camera
+        package: com.crop.camera
         pluginClass: FlutterCropCameraPlugin
       ios:
         pluginClass: FlutterCropCameraPlugin

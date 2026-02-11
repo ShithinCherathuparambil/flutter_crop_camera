@@ -1,4 +1,4 @@
-package com.example.flutter_crop_camera
+package com.crop.camera
 
 import android.app.Activity
 import android.content.Context
