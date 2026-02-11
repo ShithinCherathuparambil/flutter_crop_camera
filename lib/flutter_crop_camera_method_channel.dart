@@ -5,7 +5,8 @@ import 'flutter_crop_camera_platform_interface.dart';
 
 /// An implementation of [FlutterCropCameraPlatform] that uses method channels.
 class MethodChannelFlutterCropCamera extends FlutterCropCameraPlatform {
-  /// The method channel used to interact with the native platform.
+  /// The [MethodChannel] used to interact with the native side (Android/iOS).
+  /// This must match the channel name defined in the native code.
   @visibleForTesting
   final methodChannel = const MethodChannel('flutter_crop_camera');
 

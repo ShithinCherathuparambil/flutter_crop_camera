@@ -40,19 +40,26 @@ void main() {
         onCrop: (x, y, w, h, roll, flip) {},
         showGrid: showGrid,
         lockAspectRatio: lockAspectRatio,
+        screenOrientations: const [], // Empty or any list for test
       ),
     );
   }
 
   Future<void> waitForImage(WidgetTester tester) async {
-    await tester.pump(); // Trigger initState
-
-    await tester.runAsync(() async {
-      await Future.delayed(const Duration(milliseconds: 500));
-    });
-
+    // Initial pump to trigger initState
     await tester.pump();
 
+    // decodeImageFromList is async and platform-bound.
+    // We use runAsync to let it progress.
+    await tester.runAsync(() async {
+      // 2 seconds delay to be extra safe for platform-bound decoding
+      await Future.delayed(const Duration(seconds: 2));
+    });
+
+    // Pump to process potential setState
+    await tester.pump();
+
+    // Verification: if it's still loading, try pumping more frames
     for (int i = 0; i < 20; i++) {
       if (find.byType(CircularProgressIndicator).evaluate().isEmpty) break;
       await tester.pump(const Duration(milliseconds: 100));
@@ -62,25 +69,46 @@ void main() {
   group('CropEditor Widget Tests', () {
     testWidgets('renders toolbar after loading', (tester) async {
       await tester.pumpWidget(buildTestWidget());
+
+      // Verify loader shows up first
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
       await waitForImage(tester);
+
+      // Verify toolbar buttons
       expect(find.byKey(const Key('crop_reset_button')), findsOneWidget);
       expect(find.byKey(const Key('crop_grid_button')), findsOneWidget);
+      expect(find.byKey(const Key('crop_rotate_button')), findsOneWidget);
+      expect(find.byKey(const Key('crop_mirror_button')), findsOneWidget);
     });
 
     testWidgets('toggle grid updates icon', (tester) async {
       await tester.pumpWidget(buildTestWidget(showGrid: true));
       await waitForImage(tester);
+
+      // Initially grid_on
       expect(find.byIcon(Icons.grid_on), findsOneWidget);
+
       await tester.tap(find.byKey(const Key('crop_grid_button')));
       await tester.pump();
+
       expect(find.byIcon(Icons.grid_off), findsOneWidget);
     });
 
     testWidgets('lockAspectRatio hides ratio buttons', (tester) async {
       await tester.pumpWidget(buildTestWidget(lockAspectRatio: true));
       await waitForImage(tester);
+
       expect(find.text('Original'), findsNothing);
+      expect(find.text('1:1'), findsNothing);
+    });
+
+    testWidgets('rotate button interaction', (tester) async {
+      await tester.pumpWidget(buildTestWidget());
+      await waitForImage(tester);
+
+      await tester.tap(find.byKey(const Key('crop_rotate_button')));
+      await tester.pump();
     });
   });
 }

@@ -12,7 +12,9 @@ abstract class FlutterCropCameraPlatform extends PlatformInterface {
 
   /// The default instance of [FlutterCropCameraPlatform] to use.
   ///
-  /// Defaults to [MethodChannelFlutterCropCamera].
+  /// By default, this uses the [MethodChannelFlutterCropCamera] implementation,
+  /// but it can be overridden by platform-specific plugins (like web/macOS)
+  /// during their registration phase.
   static FlutterCropCameraPlatform get instance => _instance;
 
   /// Platform-specific implementations should set this with their own
@@ -23,6 +25,7 @@ abstract class FlutterCropCameraPlatform extends PlatformInterface {
     _instance = instance;
   }
 
+  /// Retrieves the platform version (debug/info utility).
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');
   }

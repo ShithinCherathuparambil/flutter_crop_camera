@@ -1,13 +1,18 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'flutter_crop_camera_controller.dart';
 import 'src/camera_preview.dart';
 import 'src/crop_editor.dart';
 
+/// Enum to specify the preferred camera lens (front or rear).
 enum CamPreference { front, rear }
 
+/// Enum to specify supported camera aspect ratios for the viewfinder.
 enum CamRatio { ratio3x4, ratio4x3, ratio9x16, ratio16x9, ratio1x1 }
 
+/// [FlutterCropCamera] is the main widget that provides a full-screen camera
+/// experience with optional cropping capability.
 class FlutterCropCamera extends StatefulWidget {
   /// **Enable Cropping**
   ///
@@ -87,6 +92,18 @@ class FlutterCropCamera extends StatefulWidget {
   /// Defaults to `false`.
   final bool lockAspectRatio;
 
+  /// **Screen Orientations**
+  ///
+  /// Specifies the list of allowed device orientations for the camera and
+  /// crop editor screens.
+  ///
+  /// Common options:
+  /// - `[DeviceOrientation.portraitUp]`: Locks to portrait.
+  /// - `[DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]`: Locks to landscape.
+  ///
+  /// Defaults to `[DeviceOrientation.portraitUp]`.
+  final List<DeviceOrientation> screenOrientations;
+
   const FlutterCropCamera({
     super.key,
     this.cropEnabled = false,
@@ -96,6 +113,7 @@ class FlutterCropCamera extends StatefulWidget {
     this.aspectRatio = CamRatio.ratio3x4,
     this.showGrid = true,
     this.lockAspectRatio = false,
+    this.screenOrientations = const [DeviceOrientation.portraitUp],
   });
 
   @override
@@ -103,21 +121,34 @@ class FlutterCropCamera extends StatefulWidget {
 }
 
 class _FlutterCropCameraState extends State<FlutterCropCamera> {
+  /// Local controller handles all communication with the native platform.
   final FlutterCropCameraController _controller = FlutterCropCameraController();
+
+  /// Flag to track if the camera native platform is fully initialized.
   bool _isInit = false;
+
+  /// Current zoom level, defaults to 1.0 (no zoom).
   double _currentZoom = 1.0;
-  String _flashMode = "off"; // off, auto, on
-  String _selectedMode = "PHOTO"; // PHOTO, PORTRAIT
+
+  /// Current flash mode. Possible values: "off", "auto", "on".
+  String _flashMode = "off";
+
+  /// Current shooting mode. Standard photo mode is "PHOTO".
+  String _selectedMode = "PHOTO";
 
   @override
   void initState() {
     super.initState();
+    // Start camera when widget is first inserted into the tree.
     _initializeCamera();
+    // Lock orientation to user preferences.
+    SystemChrome.setPreferredOrientations(widget.screenOrientations);
   }
 
   @override
   void didUpdateWidget(covariant FlutterCropCamera oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Re-initialize camera if critical parameters change.
     if (oldWidget.quality != widget.quality ||
         oldWidget.initialCamera != widget.initialCamera ||
         oldWidget.aspectRatio != widget.aspectRatio) {
@@ -125,13 +156,14 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     }
   }
 
+  /// Initializes the native camera with the provided widget configuration.
   Future<void> _initializeCamera() async {
     await _controller.startCamera(
       quality: widget.quality,
       cameraPreference: widget.initialCamera,
       aspectRatio: widget.aspectRatio,
     );
-    // Set initial flash mode
+    // Restore the user's selected flash mode after (re)initialization.
     await _controller.setFlashMode(_flashMode);
     if (mounted) {
       setState(() {
@@ -140,9 +172,11 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     }
   }
 
+  /// Handles camera mode selection (currently supports "PHOTO" and "PORTRAIT" simulation).
   void _onModeSelected(String mode) {
     setState(() {
       _selectedMode = mode;
+      // Portrait mode usually applies a higher zoom to simulate depth of field.
       if (mode == "PORTRAIT") {
         _currentZoom = 2.0;
       } else {
@@ -152,6 +186,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     _controller.setZoom(_currentZoom);
   }
 
+  /// Cycles through flash modes: Off -> Auto -> On -> Off.
   void _toggleFlash() {
     String newMode;
     if (_flashMode == "off") {
@@ -168,6 +203,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     _controller.setFlashMode(newMode);
   }
 
+  /// Returns the appropriate icon based on the current flash mode.
   IconData _getFlashIcon() {
     switch (_flashMode) {
       case "auto":
@@ -179,6 +215,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     }
   }
 
+  /// Maps [CamRatio] enum to numerical double values for [AspectRatio] widget.
   double _getAspectRatio(CamRatio ratio) {
     switch (ratio) {
       case CamRatio.ratio3x4:
@@ -196,15 +233,22 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
 
   @override
   void dispose() {
+    // Ensure native camera resources are released when widget is destroyed.
     _controller.stopCamera();
+    // Reset orientation settings to allow all orientations for the rest of the app.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
+  /// Captures the image and either navigates to the crop editor or returns the result.
   Future<void> _capture() async {
     try {
+      // 1. Capture the raw image to temporary storage.
       final path = await _controller.takePicture();
       if (path != null) {
         final file = File(path);
+
+        // 2. If cropping is enabled, push the CropEditor screen.
         if (widget.cropEnabled) {
           if (!mounted) return;
           Navigator.push(
@@ -214,7 +258,10 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                 file: file,
                 showGrid: widget.showGrid,
                 lockAspectRatio: widget.lockAspectRatio,
+                screenOrientations: widget.screenOrientations,
+                // Callback triggered when user confirms their crop.
                 onCrop: (x, y, width, height, rotation, flipX) async {
+                  // Perform the actual bitmap transformation on the native side.
                   final croppedPath = await _controller.cropImage(
                     path: file.path,
                     x: x,
@@ -226,15 +273,17 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                     quality: (widget.quality * 100).toInt(),
                   );
                   if (croppedPath != null) {
+                    // Return the final cropped file path.
                     widget.onImageCaptured(File(croppedPath));
                     if (!context.mounted) return;
-                    Navigator.pop(context); // Close Editor
+                    Navigator.pop(context); // Close the Editor
                   }
                 },
               ),
             ),
           );
         } else {
+          // 3. If cropping is disabled, return the raw image file directly.
           widget.onImageCaptured(file);
         }
       }
