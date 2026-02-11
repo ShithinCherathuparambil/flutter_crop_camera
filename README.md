@@ -66,23 +66,35 @@ ElevatedButton(
 ### Android
 Min SDK version: **21**
 
-Add camera permissions to your `AndroidManifest.xml`:
+Add the following to your `AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.CAMERA" />
+<uses-feature android:name="android.hardware.camera" />
 ```
 
 ### iOS
 Requires **iOS 13.0** or higher.
 
-Add the following key to your `Info.plist` file to allow camera access:
+1. Add the following key to your `Info.plist` file:
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>We need camera access to take and crop photos.</string>
+<string>This app needs camera access to take and crop photos</string>
 ```
 
-Ensure your `Podfile` platform is set to at least 13.0:
+2. Add this `post_install` script to your `Podfile` to ensure permissions are handled correctly:
 ```ruby
-platform :ios, '13.0'
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_PHOTOS=1',
+      ]
+    end
+  end
+end
 ```
 
 ## License
