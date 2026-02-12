@@ -22,7 +22,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.0.2
+  flutter_crop_camera: ^0.0.3
 ```
 
 ## Usage
@@ -64,21 +64,24 @@ ElevatedButton(
 ## Platform Setup
 
 ### Android
-Min SDK version: **21**
+Min SDK version: **24**
 
 Add the following to your `AndroidManifest.xml`:
 ```xml
 <uses-permission android:name="android.permission.CAMERA" />
 <uses-feature android:name="android.hardware.camera" />
+<uses-feature android:name="android.hardware.camera.autofocus" />
 ```
 
 ### iOS
 Requires **iOS 13.0** or higher.
 
-1. Add the following key to your `Info.plist` file:
+1. Add the following keys to your `Info.plist` file:
 ```xml
 <key>NSCameraUsageDescription</key>
 <string>This app needs camera access to take and crop photos</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>This app needs photo library access to save photos</string>
 ```
 
 2. Add this `post_install` script to your `Podfile` to ensure permissions are handled correctly:

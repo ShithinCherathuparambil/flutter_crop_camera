@@ -1,3 +1,8 @@
+## 0.0.3
+* Fixed Android build error: Removed deprecated `package` attribute from `AndroidManifest.xml`.
+* Updated Android `minSdkVersion` to 24.
+* improved documentation for platform-specific configuration.
+
 ## 0.0.2
 * Fixed iOS crash on startup (MissingPluginException).
 * Fixed iOS camera preview orientation issue in portrait mode.
