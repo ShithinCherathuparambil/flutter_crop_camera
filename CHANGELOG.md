@@ -1,3 +1,10 @@
+## 0.0.7
+* Added `camera_main.jpg` to screenshots.
+* Updated `README.md` to display screenshots in description.
+
+## 0.0.6
+* Added missing screenshots to `pubspec.yaml`.
+
 ## 0.0.5
 * Added `screenshots` configuration to `pubspec.yaml` for better pub.dev display.
 
