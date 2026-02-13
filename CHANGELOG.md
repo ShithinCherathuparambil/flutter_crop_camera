@@ -1,3 +1,6 @@
+## 0.0.4
+* Added screenshot to README.md.
+
 ## 0.0.3
 * Fixed Android build error: Removed deprecated `package` attribute from `AndroidManifest.xml`.
 * Updated Android `minSdkVersion` to 24.

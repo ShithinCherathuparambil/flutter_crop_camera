@@ -1,6 +1,6 @@
 name: flutter_crop_camera
 description: "A high-performance Flutter camera plugin with a built-in crop editor, supporting custom aspect ratios, zoom, and orientation locking."
-version: 0.0.3
+version: 0.0.4
 homepage: https://github.com/ShithinCherathuparambil/flutter_crop_camera
 
 environment:

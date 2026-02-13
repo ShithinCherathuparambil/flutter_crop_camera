@@ -2,6 +2,12 @@
 
 A high-performance Flutter camera plugin with a built-in, Instagram-inspired cropping editor. Designed for visual excellence and native performance using CameraX on Android and AVFoundation on iOS.
 
+## Screenshots
+
+<p align="center">
+  <img src="doc/screenshots/camera_preview.jpg" width="300" title="Camera Preview">
+</p>
+
 ## Features
 
 - 📸 **Native Camera Preview**: High-resolution preview using native platform integrations.
