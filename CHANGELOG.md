@@ -1,3 +1,6 @@
+## 0.0.5
+* Added `screenshots` configuration to `pubspec.yaml` for better pub.dev display.
+
 ## 0.0.4
 * Added screenshot to README.md.
 
