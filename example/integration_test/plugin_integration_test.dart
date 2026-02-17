@@ -9,8 +9,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:flutter_crop_camera/flutter_crop_camera.dart';
 import 'package:flutter_crop_camera/src/crop_editor.dart';
+import 'package:flutter_crop_camera/src/image_source_picker_screen.dart';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -26,7 +26,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: FlutterCropCamera(
+            body: ImageSourcePickerScreen(
               cropEnabled: true,
               showGrid: true,
               onImageCaptured: (file) {
@@ -39,7 +39,7 @@ void main() {
 
       // 1. Wait for camera initialization
       await tester.pumpAndSettle(const Duration(seconds: 2));
-      expect(find.byType(FlutterCropCamera), findsOneWidget);
+      expect(find.byType(ImageSourcePickerScreen), findsOneWidget);
 
       // 2. Test Flash Toggle
       final flashBtn = find.byKey(const Key('flash_button'));
@@ -117,11 +117,13 @@ void main() {
     ) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: FlutterCropCamera(onImageCaptured: (_) {})),
+          home: Scaffold(
+            body: ImageSourcePickerScreen(onImageCaptured: (_) {}),
+          ),
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(FlutterCropCamera), findsOneWidget);
+      expect(find.byType(ImageSourcePickerScreen), findsOneWidget);
     });
   });
 }
