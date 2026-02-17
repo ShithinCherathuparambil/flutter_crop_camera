@@ -73,6 +73,18 @@ class FlutterCropCameraController {
     return path;
   }
 
+  /// Launches the native gallery picker and returns the paths of the selected images.
+  Future<List<String>> pickImages() async {
+    try {
+      final List<dynamic>? paths = await _channel.invokeMethod('pickImages');
+      if (paths == null) return [];
+      return paths.cast<String>();
+    } on PlatformException {
+      // debugPrint("Error picking images: ${e.message}");
+      return [];
+    }
+  }
+
   /// Performs cropping, rotation, and flipping on a saved image bitmap.
   /// This operation is performed on the native side for performance.
   Future<String?> cropImage({

@@ -25,8 +25,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  /// Stores the file reference of the image returned by the plugin.
-  File? _capturedImage;
+  /// Stores the file references of the images returned by the plugin.
+  List<File> _capturedImages = [];
 
   /// User-controlled setting to enable or disable the crop editor step.
   bool _cropEnabled = true;
@@ -70,10 +70,24 @@ class _HomePageState extends State<HomePage> {
               });
             },
           ),
-          if (_capturedImage != null)
-            Expanded(child: Center(child: Image.file(_capturedImage!)))
+          if (_capturedImages.isNotEmpty)
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.all(8),
+                // gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                //   crossAxisCount: 3,
+                //   crossAxisSpacing: 8,
+                //   mainAxisSpacing: 8,
+                // ),
+                itemCount: _capturedImages.length,
+                itemBuilder: (context, index) {
+                  return Image.file(_capturedImages[index], fit: BoxFit.cover);
+                },
+                separatorBuilder: (context, index) => const SizedBox(height: 8),
+              ),
+            )
           else
-            const Expanded(child: Center(child: Text("No image captured"))),
+            const Expanded(child: Center(child: Text("No images captured"))),
           ElevatedButton(
             onPressed: () async {
               // 1. Check current permission status
@@ -104,7 +118,7 @@ class _HomePageState extends State<HomePage> {
                           ], // Lock to portrait
                           onImageCaptured: (file) {
                             setState(() {
-                              _capturedImage = file;
+                              _capturedImages = [file];
                             });
                             Navigator.pop(context);
                           },
@@ -158,6 +172,7 @@ class _HomePageState extends State<HomePage> {
                     builder: (context) => FlutterCropCamera(
                       cropEnabled: _cropEnabled,
                       source: PickSource.gallery,
+                      pickerMode: PickerMode.multiple,
                       // initialCamera: CamPreference.rear,
                       quality: 1,
                       // aspectRatio: CamRatio.ratio3x4,
@@ -166,16 +181,22 @@ class _HomePageState extends State<HomePage> {
                       screenOrientations: const [DeviceOrientation.portraitUp],
                       onImageCaptured: (file) {
                         setState(() {
-                          _capturedImage = file;
+                          _capturedImages = [file];
                         });
-                        // Navigator.pop(context);
+                        Navigator.pop(context);
+                      },
+                      onImagesCaptured: (files) {
+                        setState(() {
+                          _capturedImages = files;
+                        });
+                        Navigator.pop(context);
                       },
                     ),
                   ),
                 );
               }
             },
-            child: const Text("Open Gallery"),
+            child: const Text("Open Gallery (Multi)"),
           ),
           const SizedBox(height: 20),
         ],

@@ -1,9 +1,8 @@
 package com.crop.camera
 
 import android.app.Activity
-import android.content.Intent
 import android.content.Context
-import android.net.Uri
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -25,12 +24,12 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
-import io.flutter.plugin.common.PluginRegistry
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler
 import io.flutter.plugin.common.MethodChannel.Result
+import io.flutter.plugin.common.PluginRegistry
 import io.flutter.view.TextureRegistry
 import java.io.File
 import java.io.FileOutputStream
@@ -38,7 +37,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /** FlutterCropCameraPlugin */
-class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
+class FlutterCropCameraPlugin :
+        FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
     private lateinit var channel: MethodChannel
     private lateinit var textureRegistry: TextureRegistry
     private var activity: Activity? = null
@@ -55,6 +55,7 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
     private var isFrontCamera = false
     private var targetAspectRatio = AspectRatio.RATIO_4_3
     private var jpegQuality = 100
+    private var isMultiPick = false
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_crop_camera")
@@ -69,6 +70,7 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             "startCamera" -> startCamera(call, result)
             "takePicture" -> takePicture(result)
             "pickImage" -> pickImage(result)
+            "pickImages" -> pickImages(result)
             "cropImage" -> {
                 val path = call.argument<String>("path")
                 val x = call.argument<Int>("x")
@@ -407,7 +409,7 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
                 val croppedFile =
                         File(
                                 activity!!.externalCacheDir,
-                                "cropped_${System.currentTimeMillis()}.jpg"
+                                "cropped_${java.util.UUID.randomUUID()}.jpg"
                         )
                 val out = FileOutputStream(croppedFile)
                 croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
@@ -443,42 +445,105 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware,
             return
         }
         pendingResult = result
+        isMultiPick = false
 
         val intent = Intent(Intent.ACTION_GET_CONTENT)
         intent.type = "image/*"
         activity.startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
     }
 
+    private fun pickImages(result: Result) {
+        val activity = activity
+        if (activity == null) {
+            result.error("NO_ACTIVITY", "Activity is null", null)
+            return
+        }
+        if (pendingResult != null) {
+            result.error("ALREADY_ACTIVE", "Image picker is already active", null)
+            return
+        }
+        pendingResult = result
+        isMultiPick = true
+
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+        intent.type = "image/*"
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        activity.startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
+    }
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         if (requestCode == PICK_IMAGE_REQUEST_CODE) {
-            if (resultCode == Activity.RESULT_OK && data != null && data.data != null) {
-                val uri = data.data!!
+            if (resultCode == Activity.RESULT_OK && data != null) {
                 val context = context
                 if (context != null) {
                     try {
-                        // Copy to temp file
-                        val inputStream = context.contentResolver.openInputStream(uri)
-                        val file = File(activity!!.externalCacheDir, "picked_${System.currentTimeMillis()}.jpg")
-                        val outputStream = FileOutputStream(file)
-                        inputStream?.copyTo(outputStream)
-                        inputStream?.close()
-                        outputStream.close()
-                        
-                        pendingResult?.success(file.absolutePath)
+                        val paths = ArrayList<String>()
+
+                        // Handle ClipData (Multiple Images)
+                        if (data.clipData != null) {
+                            val count = data.clipData!!.itemCount
+                            for (i in 0 until count) {
+                                val uri = data.clipData!!.getItemAt(i).uri
+                                val path = copyToTemp(context, uri, i)
+                                if (path != null) paths.add(path)
+                            }
+                        }
+                        // Handle Single URI
+                        else if (data.data != null) {
+                            val uri = data.data!!
+                            val path = copyToTemp(context, uri, 0)
+                            if (path != null) paths.add(path)
+                        }
+
+                        if (isMultiPick) {
+                            pendingResult?.success(paths)
+                        } else {
+                            if (paths.isNotEmpty()) {
+                                pendingResult?.success(paths[0])
+                            } else {
+                                pendingResult?.success(null)
+                            }
+                        }
                     } catch (e: Exception) {
-                        pendingResult?.error("PICK_ERROR", "Failed to copy image: ${e.message}", null)
+                        pendingResult?.error(
+                                "PICK_ERROR",
+                                "Failed to copy image: ${e.message}",
+                                null
+                        )
                     }
                 } else {
-                     pendingResult?.error("CONTEXT_ERROR", "Context is null", null)
+                    pendingResult?.error("CONTEXT_ERROR", "Context is null", null)
                 }
             } else {
                 // User cancelled or failed
-                 pendingResult?.success(null)
+                if (isMultiPick) {
+                    pendingResult?.success(ArrayList<String>())
+                } else {
+                    pendingResult?.success(null)
+                }
             }
             pendingResult = null
             return true
         }
         return false
+    }
+
+    private fun copyToTemp(context: Context, uri: android.net.Uri, index: Int): String? {
+        return try {
+            val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+            val file =
+                    File(
+                            activity!!.externalCacheDir,
+                            "picked_${System.currentTimeMillis()}_$index.jpg"
+                    )
+            val outputStream = FileOutputStream(file)
+            inputStream.copyTo(outputStream)
+            inputStream.close()
+            outputStream.close()
+            file.absolutePath
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun stopCamera() {

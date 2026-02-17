@@ -3,13 +3,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'flutter_crop_camera_controller.dart';
 import 'src/camera_preview.dart';
+
 import 'src/crop_editor.dart';
+import 'src/multi_crop_editor.dart';
 
 /// Enum to specify the preferred camera lens (front or rear).
 enum CamPreference { front, rear }
 
 /// Enum to specify the source of the image (camera or gallery).
 enum PickSource { camera, gallery }
+
+/// Enum to specify the picker mode (single or multiple).
+enum PickerMode { single, multiple }
 
 /// Enum to specify supported camera aspect ratios for the viewfinder.
 enum CamRatio { ratio3x4, ratio4x3, ratio9x16, ratio16x9, ratio1x1 }
@@ -27,15 +32,28 @@ class FlutterCropCamera extends StatefulWidget {
   /// Defaults to `false`.
   final bool cropEnabled;
 
-  /// **Image Capture Callback**
+  /// **Image Capture Callback (Single Mode)**
   ///
   /// A callback function that is triggered when the final image is ready.
   /// - If [cropEnabled] is `false`, this returns the raw captured image [File].
   /// - If [cropEnabled] is `true`, this returns the cropped and processed image [File].
   ///
-  /// This is where you should handle the resulting image, such as displaying it,
-  /// uploading it to a server, or saving it to the gallery.
-  final Function(File) onImageCaptured;
+  /// Use this callback when [pickerMode] is [PickerMode.single] (default).
+  final Function(File)? onImageCaptured;
+
+  /// **Images Capture Callback (Multiple Mode)**
+  ///
+  /// A callback function that is triggered when multiple images are selected/cropped.
+  /// Use this callback when [pickerMode] is [PickerMode.multiple].
+  final Function(List<File>)? onImagesCaptured;
+
+  /// **Picker Mode**
+  ///
+  /// Specifies whether the user can select a single image or multiple images
+  /// when [source] is set to [PickSource.gallery].
+  ///
+  /// Defaults to [PickerMode.single].
+  final PickerMode pickerMode;
 
   /// **Image Quality**
   ///
@@ -117,7 +135,9 @@ class FlutterCropCamera extends StatefulWidget {
   const FlutterCropCamera({
     super.key,
     this.cropEnabled = false,
-    required this.onImageCaptured,
+    this.onImageCaptured,
+    this.onImagesCaptured,
+    this.pickerMode = PickerMode.single,
     this.quality = 1.0,
     this.initialCamera = CamPreference.rear,
     this.aspectRatio = CamRatio.ratio3x4,
@@ -125,7 +145,14 @@ class FlutterCropCamera extends StatefulWidget {
     this.lockAspectRatio = false,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
     this.source = PickSource.camera,
-  });
+  }) : assert(
+         pickerMode == PickerMode.single ? onImageCaptured != null : true,
+         'onImageCaptured must be provided when pickerMode is single',
+       ),
+       assert(
+         pickerMode == PickerMode.multiple ? onImagesCaptured != null : true,
+         'onImagesCaptured must be provided when pickerMode is multiple',
+       );
 
   @override
   State<FlutterCropCamera> createState() => _FlutterCropCameraState();
@@ -180,17 +207,27 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
 
   /// Initializes the native camera with the provided widget configuration.
   Future<void> _initializeCamera() async {
-    await _controller.startCamera(
-      quality: widget.quality,
-      cameraPreference: widget.initialCamera,
-      aspectRatio: widget.aspectRatio,
-    );
-    // Restore the user's selected flash mode after (re)initialization.
-    await _controller.setFlashMode(_flashMode);
-    if (mounted) {
-      setState(() {
-        _isInit = true;
-      });
+    try {
+      await _controller.startCamera(
+        quality: widget.quality,
+        cameraPreference: widget.initialCamera,
+        aspectRatio: widget.aspectRatio,
+      );
+      // Restore the user's selected flash mode after (re)initialization.
+      await _controller.setFlashMode(_flashMode);
+      if (mounted) {
+        setState(() {
+          _isInit = true;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error initializing camera: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Camera Error: $e")));
+        Navigator.pop(context);
+      }
     }
   }
 
@@ -265,62 +302,108 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
   /// Pick image from gallery
   Future<void> _pickFromGallery() async {
     try {
-      final path = await _controller.pickImage();
-      if (path != null) {
-        final file = File(path);
-        // If cropping is enabled, push the CropEditor screen and wait for result
-        if (widget.cropEnabled) {
-          if (!mounted) return;
+      if (widget.pickerMode == PickerMode.single) {
+        final path = await _controller.pickImage();
+        if (path != null) {
+          final file = File(path);
+          // If cropping is enabled, push the CropEditor screen and wait for result
+          if (widget.cropEnabled) {
+            if (!mounted) return;
 
-          final croppedFile = await Navigator.push<File?>(
-            context,
-            MaterialPageRoute(
-              builder: (context) => CropEditor(
-                file: file,
-                showGrid: widget.showGrid,
-                lockAspectRatio: widget.lockAspectRatio,
-                screenOrientations: widget.screenOrientations,
-                onCrop: (x, y, width, height, rotation, flipX) async {
-                  final croppedPath = await _controller.cropImage(
-                    path: file.path,
-                    x: x,
-                    y: y,
-                    width: width,
-                    height: height,
-                    rotationDegrees: rotation,
-                    flipX: flipX,
-                    quality: (widget.quality * 100).toInt(),
-                  );
-                  if (croppedPath != null) {
-                    if (!context.mounted) return;
-                    // Return the result to the awaiter (Loader)
-                    Navigator.pop(context, File(croppedPath));
-                  }
-                },
+            final croppedFile = await Navigator.push<File?>(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CropEditor(
+                  file: file,
+                  showGrid: widget.showGrid,
+                  lockAspectRatio: widget.lockAspectRatio,
+                  screenOrientations: widget.screenOrientations,
+                  onCrop: (x, y, width, height, rotation, flipX) async {
+                    final croppedPath = await _controller.cropImage(
+                      path: file.path,
+                      x: x,
+                      y: y,
+                      width: width,
+                      height: height,
+                      rotationDegrees: rotation,
+                      flipX: flipX,
+                      quality: (widget.quality * 100).toInt(),
+                    );
+                    if (croppedPath != null) {
+                      if (!context.mounted) return;
+                      // Return the result to the awaiter (Loader)
+                      Navigator.pop(context, File(croppedPath));
+                    }
+                  },
+                ),
               ),
-            ),
-          );
+            );
 
-          // If we got a result back from CropEditor
-          if (croppedFile != null) {
-            widget.onImageCaptured(croppedFile);
-          }
-
-          // Finally, close the Loader screen
-          if (mounted) {
-            Navigator.pop(context);
+            // If we got a result back from CropEditor
+            if (croppedFile != null) {
+              widget.onImageCaptured?.call(croppedFile);
+            } else {
+              // User cancelled cropping
+              if (mounted) Navigator.pop(context);
+            }
+          } else {
+            // No cropping, just return the file
+            widget.onImageCaptured?.call(file);
+            if (mounted) Navigator.pop(context);
           }
         } else {
-          // No cropping, just return the file
-          widget.onImageCaptured(file);
-          if (mounted) {
-            Navigator.pop(context);
-          }
+          // Path is null (user cancelled picker)
+          if (mounted) Navigator.pop(context);
         }
       } else {
-        // Path is null (user cancelled picker)
-        if (mounted) {
-          Navigator.pop(context);
+        // PickerMode.multiple
+        final paths = await _controller.pickImages();
+        if (paths.isNotEmpty) {
+          final files = paths.map((path) => File(path)).toList();
+          if (widget.cropEnabled) {
+            if (!mounted) return;
+            // Navigate to MultiCropEditor
+            final List<File>? resultFiles = await Navigator.push<List<File>>(
+              context,
+              MaterialPageRoute(
+                builder: (context) => MultiCropEditor(
+                  files: files,
+                  showGrid: widget.showGrid,
+                  screenOrientations: widget.screenOrientations,
+                  onImagesCropped: (croppedFiles) {
+                    Navigator.pop(context, croppedFiles);
+                  },
+                  cropNative:
+                      (path, x, y, width, height, rotation, flipX) async {
+                        return await _controller.cropImage(
+                          path: path,
+                          x: x,
+                          y: y,
+                          width: width,
+                          height: height,
+                          rotationDegrees: rotation,
+                          flipX: flipX,
+                          quality: (widget.quality * 100).toInt(),
+                        );
+                      },
+                ),
+              ),
+            );
+
+            if (resultFiles != null) {
+              widget.onImagesCaptured?.call(resultFiles);
+              // Do NOT pop here, onImagesCaptured handles it.
+            } else {
+              // Cancelled
+              if (mounted) Navigator.pop(context);
+            }
+          } else {
+            widget.onImagesCaptured?.call(files);
+            if (mounted) Navigator.pop(context);
+          }
+        } else {
+          // User cancelled
+          if (mounted) Navigator.pop(context);
         }
       }
     } catch (e) {
@@ -365,7 +448,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
                   );
                   if (croppedPath != null) {
                     // Return the final cropped file path.
-                    widget.onImageCaptured(File(croppedPath));
+                    widget.onImageCaptured?.call(File(croppedPath));
                     if (!context.mounted) return;
                     Navigator.pop(context); // Close the Editor
                   }
@@ -375,7 +458,7 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
           );
         } else {
           // 3. If cropping is disabled, return the raw image file directly.
-          widget.onImageCaptured(file);
+          widget.onImageCaptured?.call(file);
         }
       }
     } catch (e) {
