@@ -6,23 +6,23 @@ A high-performance Flutter camera plugin with a built-in, Instagram-inspired cro
 
 <h3>Launch Camera</h3>
 <p align="center">
-  <img src="doc/screenshots/launch_camera_1.png" width="200" alt="Launch Camera 1" />
-  <img src="doc/screenshots/launch_camera_2.png" width="200" alt="Launch Camera 2" />
-  <img src="doc/screenshots/launch_camera_3.png" width="200" alt="Launch Camera 3" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/launch_camera_1.png" width="200" alt="Launch Camera 1" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/launch_camera_2.png" width="200" alt="Launch Camera 2" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/launch_camera_3.png" width="200" alt="Launch Camera 3" />
 </p>
 
 <h3>Pick from Gallery</h3>
 <p align="center">
-  <img src="doc/screenshots/gallery_picker_1.png" width="200" alt="Gallery Picker 1" />
-  <img src="doc/screenshots/gallery_picker_2.png" width="200" alt="Gallery Picker 2" />
-  <img src="doc/screenshots/gallery_picker_3.png" width="200" alt="Gallery Picker 3" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/gallery_picker_1.png" width="200" alt="Gallery Picker 1" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/gallery_picker_2.png" width="200" alt="Gallery Picker 2" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/gallery_picker_3.png" width="200" alt="Gallery Picker 3" />
 </p>
 
 <h3>Pick Multiple Images</h3>
 <p align="center">
-  <img src="doc/screenshots/multi_picker_1.png" width="200" alt="Multi Picker 1" />
-  <img src="doc/screenshots/multi_picker_2.png" width="200" alt="Multi Picker 2" />
-  <img src="doc/screenshots/multi_picker_3.png" width="200" alt="Multi Picker 3" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/multi_picker_1.png" width="200" alt="Multi Picker 1" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/multi_picker_2.png" width="200" alt="Multi Picker 2" />
+  <img src="https://raw.githubusercontent.com/ShithinCherathuparambil/flutter_crop_camera/main/doc/screenshots/multi_picker_3.png" width="200" alt="Multi Picker 3" />
 </p>
 
 ## Features
@@ -45,7 +45,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.1.0
+  flutter_crop_camera: ^0.1.1
 ```
 
 ## Usage
@@ -126,9 +126,9 @@ ElevatedButton(
 )
 ```
 
-## Migration Guide (0.0.x -> 0.1.0)
+## Migration Guide (0.0.x -> 0.1.1)
 
-Version `0.1.0` introduces a cleaner, method-based API using `ImageSourcePicker`, replacing the direct usage of the `FlutterCropCamera` widget.
+Version `0.1.1` introduces a cleaner, method-based API using `ImageSourcePicker`, replacing the direct usage of the `FlutterCropCamera` widget.
 
 ### Old Code (v0.0.x)
 ```dart
@@ -143,11 +143,11 @@ Navigator.push(
         },
       ),
     ),
-  ),
+  ),    
 );
 ```
 
-### New Code (v0.1.0)
+### New Code (v0.1.1)
 ```dart
 final file = await ImageSourcePicker().openCamera(
   context: context,

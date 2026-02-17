@@ -1,3 +1,6 @@
+## 0.1.1
+* Fixed README.md image paths for pub.dev display.
+
 ## 0.1.0
 * Refactored API: Introduced `ImageSourcePicker` class for method-based access.
 * Added support for picking multiple images from gallery (`pickMultipleImages`).
