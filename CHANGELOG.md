@@ -1,3 +1,13 @@
+## 0.1.1
+* Fixed README.md image paths for pub.dev display.
+
+## 0.1.0
+* Refactored API: Introduced `ImageSourcePicker` class for method-based access.
+* Added support for picking multiple images from gallery (`pickMultipleImages`).
+* Added `pickImage` for single image selection from gallery.
+* Replaced direct widget usage with `await`-based calls (`openCamera`).
+* Updated documentation and screenshots.
+
 ## 0.0.7
 * Added `camera_main.jpg` to screenshots.
 * Updated `README.md` to display screenshots in description.
