@@ -1,7 +1,9 @@
 package com.crop.camera
 
 import android.app.Activity
+import android.content.Intent
 import android.content.Context
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -23,6 +25,7 @@ import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.PluginRegistry
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -35,10 +38,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /** FlutterCropCameraPlugin */
-class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
+class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
     private lateinit var channel: MethodChannel
     private lateinit var textureRegistry: TextureRegistry
     private var activity: Activity? = null
+    private var activityBinding: ActivityPluginBinding? = null
+    private var pendingResult: Result? = null
+    private val PICK_IMAGE_REQUEST_CODE = 1994
     private var context: Context? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
@@ -62,6 +68,7 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware 
         when (call.method) {
             "startCamera" -> startCamera(call, result)
             "takePicture" -> takePicture(result)
+            "pickImage" -> pickImage(result)
             "cropImage" -> {
                 val path = call.argument<String>("path")
                 val x = call.argument<Int>("x")
@@ -425,6 +432,55 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware 
         }
     }
 
+    private fun pickImage(result: Result) {
+        val activity = activity
+        if (activity == null) {
+            result.error("NO_ACTIVITY", "Activity is null", null)
+            return
+        }
+        if (pendingResult != null) {
+            result.error("ALREADY_ACTIVE", "Image picker is already active", null)
+            return
+        }
+        pendingResult = result
+
+        val intent = Intent(Intent.ACTION_GET_CONTENT)
+        intent.type = "image/*"
+        activity.startActivityForResult(intent, PICK_IMAGE_REQUEST_CODE)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode == PICK_IMAGE_REQUEST_CODE) {
+            if (resultCode == Activity.RESULT_OK && data != null && data.data != null) {
+                val uri = data.data!!
+                val context = context
+                if (context != null) {
+                    try {
+                        // Copy to temp file
+                        val inputStream = context.contentResolver.openInputStream(uri)
+                        val file = File(activity!!.externalCacheDir, "picked_${System.currentTimeMillis()}.jpg")
+                        val outputStream = FileOutputStream(file)
+                        inputStream?.copyTo(outputStream)
+                        inputStream?.close()
+                        outputStream.close()
+                        
+                        pendingResult?.success(file.absolutePath)
+                    } catch (e: Exception) {
+                        pendingResult?.error("PICK_ERROR", "Failed to copy image: ${e.message}", null)
+                    }
+                } else {
+                     pendingResult?.error("CONTEXT_ERROR", "Context is null", null)
+                }
+            } else {
+                // User cancelled or failed
+                 pendingResult?.success(null)
+            }
+            pendingResult = null
+            return true
+        }
+        return false
+    }
+
     private fun stopCamera() {
         cameraProvider?.unbindAll()
         cameraEntry?.release()
@@ -436,15 +492,25 @@ class FlutterCropCameraPlugin : FlutterPlugin, MethodCallHandler, ActivityAware 
 
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         activity = binding.activity
+        activityBinding = binding
+        binding.addActivityResultListener(this)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
+        activityBinding?.removeActivityResultListener(this)
+        activityBinding = null
         activity = null
     }
+
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         activity = binding.activity
+        activityBinding = binding
+        binding.addActivityResultListener(this)
     }
+
     override fun onDetachedFromActivity() {
+        activityBinding?.removeActivityResultListener(this)
+        activityBinding = null
         activity = null
     }
 }

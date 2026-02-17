@@ -148,6 +148,36 @@ class _HomePageState extends State<HomePage> {
             child: const Text("Open Camera"),
           ),
           const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () {
+              if (context.mounted) {
+                // Navigate to gallery picker
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => FlutterCropCamera(
+                      cropEnabled: _cropEnabled,
+                      source: PickSource.gallery,
+                      // initialCamera: CamPreference.rear,
+                      quality: 1,
+                      // aspectRatio: CamRatio.ratio3x4,
+                      showGrid: _showGrid,
+                      lockAspectRatio: _lockAspectRatio,
+                      screenOrientations: const [DeviceOrientation.portraitUp],
+                      onImageCaptured: (file) {
+                        setState(() {
+                          _capturedImage = file;
+                        });
+                        // Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text("Open Gallery"),
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );

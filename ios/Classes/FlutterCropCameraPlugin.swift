@@ -2,7 +2,8 @@ import Flutter
 import UIKit
 import AVFoundation
 
-public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
+
+public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     var textureRegistry: FlutterTextureRegistry?
     var textureId: Int64?
     var captureSession: AVCaptureSession?
@@ -23,6 +24,8 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             startCamera(result: result)
         case "takePicture":
             takePicture(result: result)
+        case "pickImage":
+            pickImage(result: result)
         case "cropImage":
             if let args = call.arguments as? [String: Any],
                let path = args["path"] as? String,
@@ -369,6 +372,72 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to save image: \(error)", details: nil))
         }
     }
+
+    private struct AssociatedKeys {
+        static var pickImageResult = "pickImageResult"
+    }
+
+    func pickImage(result: @escaping FlutterResult) {
+        guard UIImagePickerController.isSourceTypeAvailable(.photoLibrary) else {
+            result(FlutterError(code: "PICK_ERROR", message: "Photo library not available", details: nil))
+            return
+        }
+        
+        // Use a safe UI thread call
+        DispatchQueue.main.async {
+            let picker = UIImagePickerController()
+            picker.sourceType = .photoLibrary
+            picker.delegate = self
+            
+            // Store result for delegate callback
+            objc_setAssociatedObject(self, &AssociatedKeys.pickImageResult, result, .OBJC_ASSOCIATION_COPY)
+            
+            // Find top view controller to present
+            if let rootVC = UIApplication.shared.keyWindow?.rootViewController ?? UIApplication.shared.delegate?.window??.rootViewController {
+                var topVC = rootVC
+                while let presentedVC = topVC.presentedViewController {
+                    topVC = presentedVC
+                }
+                topVC.present(picker, animated: true, completion: nil)
+            } else {
+                 result(FlutterError(code: "PICK_ERROR", message: "No view controller to present picker", details: nil))
+            }
+        }
+    }
+
+    public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        guard let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImageResult) as? FlutterResult else { return }
+        
+        guard let image = info[.originalImage] as? UIImage else {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to pick image", details: nil))
+            return
+        }
+        
+        guard let data = image.jpegData(compressionQuality: 1.0) else {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to compress captured image", details: nil))
+            return
+        }
+        
+        let fileName = "picked_\(Int(Date().timeIntervalSince1970)).jpg"
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(fileName)
+        
+        do {
+            try data.write(to: fileURL)
+            result(fileURL.path)
+        } catch {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to save picked image: \(error)", details: nil))
+        }
+    }
+
+    public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
+        if let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImageResult) as? FlutterResult {
+            result(nil)
+        }
+    }
 }
 
 extension FlutterCropCameraPlugin: FlutterTexture {
@@ -416,3 +485,4 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         }
     }
 }
+

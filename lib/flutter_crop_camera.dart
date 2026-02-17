@@ -8,6 +8,9 @@ import 'src/crop_editor.dart';
 /// Enum to specify the preferred camera lens (front or rear).
 enum CamPreference { front, rear }
 
+/// Enum to specify the source of the image (camera or gallery).
+enum PickSource { camera, gallery }
+
 /// Enum to specify supported camera aspect ratios for the viewfinder.
 enum CamRatio { ratio3x4, ratio4x3, ratio9x16, ratio16x9, ratio1x1 }
 
@@ -104,6 +107,13 @@ class FlutterCropCamera extends StatefulWidget {
   /// Defaults to `[DeviceOrientation.portraitUp]`.
   final List<DeviceOrientation> screenOrientations;
 
+  /// **Image Pickup Source**
+  ///
+  /// Specifies whether to open the camera or the gallery.
+  /// - [PickSource.camera]: Opens the camera viewfinder (default).
+  /// - [PickSource.gallery]: Opens the native gallery picker immediately.
+  final PickSource source;
+
   const FlutterCropCamera({
     super.key,
     this.cropEnabled = false,
@@ -114,6 +124,7 @@ class FlutterCropCamera extends StatefulWidget {
     this.showGrid = true,
     this.lockAspectRatio = false,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
+    this.source = PickSource.camera,
   });
 
   @override
@@ -139,8 +150,12 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
   @override
   void initState() {
     super.initState();
-    // Start camera when widget is first inserted into the tree.
-    _initializeCamera();
+    // Start camera (or pick from gallery) when widget is first inserted into the tree.
+    if (widget.source == PickSource.camera) {
+      _initializeCamera();
+    } else {
+      _pickFromGallery();
+    }
     // Lock orientation to user preferences.
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
   }
@@ -148,10 +163,17 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
   @override
   void didUpdateWidget(covariant FlutterCropCamera oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Re-initialize camera if critical parameters change.
-    if (oldWidget.quality != widget.quality ||
-        oldWidget.initialCamera != widget.initialCamera ||
-        oldWidget.aspectRatio != widget.aspectRatio) {
+    if (oldWidget.source != widget.source) {
+      if (widget.source == PickSource.camera) {
+        _initializeCamera();
+      } else {
+        _controller.stopCamera();
+        _pickFromGallery();
+      }
+    } else if (widget.source == PickSource.camera &&
+        (oldWidget.quality != widget.quality ||
+            oldWidget.initialCamera != widget.initialCamera ||
+            oldWidget.aspectRatio != widget.aspectRatio)) {
       _initializeCamera();
     }
   }
@@ -238,6 +260,75 @@ class _FlutterCropCameraState extends State<FlutterCropCamera> {
     // Reset orientation settings to allow all orientations for the rest of the app.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
+  }
+
+  /// Pick image from gallery
+  Future<void> _pickFromGallery() async {
+    try {
+      final path = await _controller.pickImage();
+      if (path != null) {
+        final file = File(path);
+        // If cropping is enabled, push the CropEditor screen and wait for result
+        if (widget.cropEnabled) {
+          if (!mounted) return;
+
+          final croppedFile = await Navigator.push<File?>(
+            context,
+            MaterialPageRoute(
+              builder: (context) => CropEditor(
+                file: file,
+                showGrid: widget.showGrid,
+                lockAspectRatio: widget.lockAspectRatio,
+                screenOrientations: widget.screenOrientations,
+                onCrop: (x, y, width, height, rotation, flipX) async {
+                  final croppedPath = await _controller.cropImage(
+                    path: file.path,
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    rotationDegrees: rotation,
+                    flipX: flipX,
+                    quality: (widget.quality * 100).toInt(),
+                  );
+                  if (croppedPath != null) {
+                    if (!context.mounted) return;
+                    // Return the result to the awaiter (Loader)
+                    Navigator.pop(context, File(croppedPath));
+                  }
+                },
+              ),
+            ),
+          );
+
+          // If we got a result back from CropEditor
+          if (croppedFile != null) {
+            widget.onImageCaptured(croppedFile);
+          }
+
+          // Finally, close the Loader screen
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        } else {
+          // No cropping, just return the file
+          widget.onImageCaptured(file);
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        }
+      } else {
+        // Path is null (user cancelled picker)
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error picking image: $e");
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    }
   }
 
   /// Captures the image and either navigates to the crop editor or returns the result.

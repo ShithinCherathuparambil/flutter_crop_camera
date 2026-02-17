@@ -67,6 +67,12 @@ class FlutterCropCameraController {
     return path;
   }
 
+  /// Launches the native gallery picker and returns the path of the selected image.
+  Future<String?> pickImage() async {
+    final String? path = await _channel.invokeMethod('pickImage');
+    return path;
+  }
+
   /// Performs cropping, rotation, and flipping on a saved image bitmap.
   /// This operation is performed on the native side for performance.
   Future<String?> cropImage({
