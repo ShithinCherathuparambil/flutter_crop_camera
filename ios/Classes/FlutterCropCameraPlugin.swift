@@ -1,8 +1,11 @@
 import Flutter
 import UIKit
 import AVFoundation
+import PhotosUI
 
-public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
+
+
+public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
     var textureRegistry: FlutterTextureRegistry?
     var textureId: Int64?
     var captureSession: AVCaptureSession?
@@ -23,6 +26,10 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             startCamera(result: result)
         case "takePicture":
             takePicture(result: result)
+        case "pickImage":
+            pickImage(result: result)
+        case "pickImages":
+            pickImages(result: result)
         case "cropImage":
             if let args = call.arguments as? [String: Any],
                let path = args["path"] as? String,
@@ -62,6 +69,7 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
 
     private var currentDevice: AVCaptureDevice?
     private var isFrontCamera = false
+    private var isMultiPick = false
 
     func startCamera(result: @escaping FlutterResult) {
         let session = AVCaptureSession()
@@ -358,7 +366,7 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             return
         }
         
-        let fileName = "cropped_\(Int(Date().timeIntervalSince1970)).jpg"
+        let fileName = "cropped_\(UUID().uuidString).jpg"
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
         
@@ -369,6 +377,166 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to save image: \(error)", details: nil))
         }
     }
+
+    private struct AssociatedKeys {
+        static var pickImageResult = "pickImageResult"
+        static var pickImagesResult = "pickImagesResult"
+    }
+
+    func pickImages(result: @escaping FlutterResult) {
+        if #available(iOS 14, *) {
+            // Use a safe UI thread call
+            DispatchQueue.main.async {
+                var configuration = PHPickerConfiguration()
+                configuration.selectionLimit = 0 // 0 means no limit (multiple selection)
+                configuration.filter = .images
+                
+                let picker = PHPickerViewController(configuration: configuration)
+                picker.delegate = self
+                
+                // Store result for delegate callback
+                objc_setAssociatedObject(self, &AssociatedKeys.pickImagesResult, result, .OBJC_ASSOCIATION_COPY)
+                self.isMultiPick = true
+                
+                // Find top view controller to present
+                if let rootVC = UIApplication.shared.keyWindow?.rootViewController ?? UIApplication.shared.delegate?.window??.rootViewController {
+                    var topVC = rootVC
+                    while let presentedVC = topVC.presentedViewController {
+                        topVC = presentedVC
+                    }
+                    topVC.present(picker, animated: true, completion: nil)
+                } else {
+                     result(FlutterError(code: "PICK_ERROR", message: "No view controller to present picker", details: nil))
+                }
+            }
+        } else {
+            result(FlutterError(code: "UNSUPPORTED_VERSION", message: "Multi-image picker requires iOS 14+", details: nil))
+        }
+    }
+
+    func pickImage(result: @escaping FlutterResult) {
+        guard UIImagePickerController.isSourceTypeAvailable(.photoLibrary) else {
+            result(FlutterError(code: "PICK_ERROR", message: "Photo library not available", details: nil))
+            return
+        }
+        
+        // Use a safe UI thread call
+        DispatchQueue.main.async {
+            let picker = UIImagePickerController()
+            picker.sourceType = .photoLibrary
+            picker.delegate = self
+            
+            // Store result for delegate callback
+            objc_setAssociatedObject(self, &AssociatedKeys.pickImageResult, result, .OBJC_ASSOCIATION_COPY)
+            
+            // Find top view controller to present
+            if let rootVC = UIApplication.shared.keyWindow?.rootViewController ?? UIApplication.shared.delegate?.window??.rootViewController {
+                var topVC = rootVC
+                while let presentedVC = topVC.presentedViewController {
+                    topVC = presentedVC
+                }
+                topVC.present(picker, animated: true, completion: nil)
+            } else {
+                 result(FlutterError(code: "PICK_ERROR", message: "No view controller to present picker", details: nil))
+            }
+        }
+    }
+
+    public func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        guard let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImageResult) as? FlutterResult else { return }
+        
+        guard let image = info[.originalImage] as? UIImage else {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to pick image", details: nil))
+            return
+        }
+        
+        guard let data = image.jpegData(compressionQuality: 1.0) else {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to compress captured image", details: nil))
+            return
+        }
+        
+        let fileName = "picked_\(Int(Date().timeIntervalSince1970)).jpg"
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent(fileName)
+        
+        do {
+            try data.write(to: fileURL)
+            result(fileURL.path)
+        } catch {
+            result(FlutterError(code: "PICK_ERROR", message: "Failed to save picked image: \(error)", details: nil))
+        }
+    }
+
+    public func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+        picker.dismiss(animated: true, completion: nil)
+        if let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImageResult) as? FlutterResult {
+            result(nil)
+        }
+    }
+
+    // MARK: - PHPickerViewControllerDelegate
+}
+
+@available(iOS 14, *)
+extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
+    public func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true, completion: nil)
+        
+        guard let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImagesResult) as? FlutterResult else { return }
+        
+        if results.isEmpty {
+            result([])
+            return
+        }
+        
+        var paths: [String] = []
+        let dispatchGroup = DispatchGroup()
+        
+        for (index, item) in results.enumerated() {
+            dispatchGroup.enter()
+            
+            if item.itemProvider.canLoadObject(ofClass: UIImage.self) {
+                item.itemProvider.loadObject(ofClass: UIImage.self) { (object, error) in
+                    if let image = object as? UIImage {
+                         if let data = image.jpegData(compressionQuality: 1.0) {
+                             let fileName = "picked_\(Int(Date().timeIntervalSince1970))_\(index).jpg"
+                             let tempDir = FileManager.default.temporaryDirectory
+                             let fileURL = tempDir.appendingPathComponent(fileName)
+                             
+                             do {
+                                 try data.write(to: fileURL)
+                                 // We need to synchronize access to paths array if we weren't on main thread,
+                                 // but loadObject's completion handler might be on background thread.
+                                 // Let's use a lock or perform on main queue.
+                                 // Actually simpler: just append and handle order later?
+                                 // Or wait properly.
+                                 DispatchQueue.main.async {
+                                     paths.append(fileURL.path)
+                                     dispatchGroup.leave()
+                                 }
+                             } catch {
+                                 print("Error saving image: \(error)")
+                                 dispatchGroup.leave()
+                             }
+                         } else {
+                             dispatchGroup.leave()
+                         }
+                    } else {
+                        dispatchGroup.leave()
+                    }
+                }
+            } else {
+                dispatchGroup.leave()
+            }
+        }
+        
+        dispatchGroup.notify(queue: .main) {
+            result(paths)
+        }
+    }
+
 }
 
 extension FlutterCropCameraPlugin: FlutterTexture {
@@ -416,3 +584,4 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         }
     }
 }
+

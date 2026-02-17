@@ -4,10 +4,25 @@ A high-performance Flutter camera plugin with a built-in, Instagram-inspired cro
 
 ## Screenshots
 
+<h3>Launch Camera</h3>
 <p align="center">
-  <img src="doc/screenshots/camera_main.jpg" width="200" alt="Camera Main" />
-  <img src="doc/screenshots/camera_preview_new.jpg" width="200" alt="Camera Preview" />
-  <img src="doc/screenshots/crop_editor.jpg" width="200" alt="Crop Editor" />
+  <img src="doc/screenshots/launch_camera_1.png" width="200" alt="Launch Camera 1" />
+  <img src="doc/screenshots/launch_camera_2.png" width="200" alt="Launch Camera 2" />
+  <img src="doc/screenshots/launch_camera_3.png" width="200" alt="Launch Camera 3" />
+</p>
+
+<h3>Pick from Gallery</h3>
+<p align="center">
+  <img src="doc/screenshots/gallery_picker_1.png" width="200" alt="Gallery Picker 1" />
+  <img src="doc/screenshots/gallery_picker_2.png" width="200" alt="Gallery Picker 2" />
+  <img src="doc/screenshots/gallery_picker_3.png" width="200" alt="Gallery Picker 3" />
+</p>
+
+<h3>Pick Multiple Images</h3>
+<p align="center">
+  <img src="doc/screenshots/multi_picker_1.png" width="200" alt="Multi Picker 1" />
+  <img src="doc/screenshots/multi_picker_2.png" width="200" alt="Multi Picker 2" />
+  <img src="doc/screenshots/multi_picker_3.png" width="200" alt="Multi Picker 3" />
 </p>
 
 ## Features
@@ -30,7 +45,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.0.3
+  flutter_crop_camera: ^0.1.0
 ```
 
 ## Usage
@@ -47,26 +62,97 @@ import 'package:flutter_crop_camera/flutter_crop_camera.dart';
 // ... inside your widget ...
 
 ElevatedButton(
-  onPressed: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          body: FlutterCropCamera(
-            cropEnabled: true, // Enable the cropping step
-            onImageCaptured: (File imageFile) {
-              // Handle the resulting cropped image
-              print("Cropped image path: ${imageFile.path}");
-              Navigator.pop(context);
-            },
-            screenOrientations: [DeviceOrientation.portraitUp], // Lock to portrait
-          ),
-        ),
-      ),
+  onPressed: () async {
+    final ImageSourcePicker picker = ImageSourcePicker();
+    
+    // Open Camera
+    final File? file = await picker.openCamera(
+      context: context,
+      cropEnabled: true, // Enable the cropping step
+      screenOrientations: [DeviceOrientation.portraitUp], // Lock to portrait
     );
+
+    if (file != null) {
+      // Handle the resulting cropped image
+      print("Cropped image path: ${file.path}");
+    }
   },
   child: Text("Open Camera"),
 )
+```
+
+### 3. Pick from Gallery
+
+```dart
+ElevatedButton(
+  onPressed: () async {
+    final ImageSourcePicker picker = ImageSourcePicker();
+    
+    // Pick single image from gallery
+    final File? file = await picker.pickImage(
+      context: context,
+      cropEnabled: true, // Enable cropping for gallery image too
+    );
+
+    if (file != null) {
+      print("Picked image path: ${file.path}");
+    }
+  },
+  child: Text("Pick from Gallery"),
+)
+```
+
+### 4. Pick Multiple Images from Gallery
+
+```dart
+ElevatedButton(
+  onPressed: () async {
+    final ImageSourcePicker picker = ImageSourcePicker();
+    
+    // Pick multiple images
+    final List<File> files = await picker.pickMultipleImages(
+      context: context,
+      cropEnabled: true, // Enable cropping for all images
+    );
+
+    if (files.isNotEmpty) {
+      // Handle the list of files
+      for (var file in files) {
+        print("Picked image: ${file.path}");
+      }
+    }
+  },
+  child: Text("Pick Multiple Images"),
+)
+```
+
+## Migration Guide (0.0.x -> 0.1.0)
+
+Version `0.1.0` introduces a cleaner, method-based API using `ImageSourcePicker`, replacing the direct usage of the `FlutterCropCamera` widget.
+
+### Old Code (v0.0.x)
+```dart
+Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (context) => Scaffold(
+      body: FlutterCropCamera(
+        cropEnabled: true,
+        onImageCaptured: (file) {
+          // Handle result
+        },
+      ),
+    ),
+  ),
+);
+```
+
+### New Code (v0.1.0)
+```dart
+final file = await ImageSourcePicker().openCamera(
+  context: context,
+  cropEnabled: true,
+);
 ```
 
 ## Platform Setup

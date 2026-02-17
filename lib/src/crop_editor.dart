@@ -403,7 +403,6 @@ class _CropEditorState extends State<CropEditor> {
           });
         },
         child: Container(
-          key: Key('ratio_$label'),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected ? Colors.cyanAccent : Colors.transparent,

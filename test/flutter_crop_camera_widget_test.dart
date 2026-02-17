@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_crop_camera/flutter_crop_camera.dart';
+import 'package:flutter_crop_camera/src/image_source_picker_screen.dart';
 
 void main() {
   const MethodChannel channel = MethodChannel('flutter_crop_camera');
@@ -37,7 +37,7 @@ void main() {
     Function(dynamic)? onImageCaptured,
   }) {
     return MaterialApp(
-      home: FlutterCropCamera(
+      home: ImageSourcePickerScreen(
         onImageCaptured: onImageCaptured ?? (file) {},
         cropEnabled: cropEnabled,
       ),
