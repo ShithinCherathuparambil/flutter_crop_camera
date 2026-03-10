@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+enum _EditorMode { ratio, rotate }
+
 class MultiCropEditor extends StatefulWidget {
   final List<File> files;
   final Function(List<File> files) onImagesCropped;
@@ -36,11 +38,9 @@ class MultiCropEditor extends StatefulWidget {
 class _MultiCropEditorState extends State<MultiCropEditor> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
-
-  // Store state for each image: rotation, flip, cropRect (optional if we want to restore crop)
-  // For simplicity, we'll store rotation and flip.
-  // We need to keep track of transformations for each file index.
   late List<_EditorState> _states;
+  bool _isDragging = false;
+  _EditorMode _mode = _EditorMode.ratio; // Current active tab
 
   @override
   void initState() {
@@ -63,10 +63,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       _states.removeAt(_currentIndex);
 
       if (widget.files.isEmpty) {
-        // No images left, cancel edits
         Navigator.pop(context, null);
       } else {
-        // Adjust current index if needed
         if (_currentIndex >= widget.files.length) {
           _currentIndex = widget.files.length - 1;
         }
@@ -75,42 +73,12 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   }
 
   void _onDone() async {
-    // Process all images
-    // We need to iterate through all states and apply crops.
-    // However, the crop calculation requires the loaded ui.Image and layout info.
-    // If we haven't loaded/viewed an image, we can't calculate its crop rect easily unless we assume full image.
-    // Strategy:
-    // 1. For visited images (where we have user edits), apply the edit.
-    // 2. For unvisited images, return original file (or 0,0,w,h crop if needed).
-
-    // BUT: The current _SingleImageEditor calculates crop rect based on on-screen layout.
-    // This implies we can only crop what has been laid out.
-    // To support "Crop All", we might need to load each image.
-
-    // Simpler approach for v1: Only crop the ones the user actually edited?
-    // Or, we force layout?
-
-    // Better approach: _SingleImageEditor exposes a "getCropParams" method.
-    // But since they are inside a PageView, they might not be mounted.
-
-    // Let's rely on the _states list.
-    // The _SingleImageEditor will update the _states[_currentIndex] when interactions happen.
-    // _states will hold: rotation, flip.
-    // What about ZOOM/PAN? That's in TransformationController.
-
-    // If we want WhatsApp style:
-    // User edits image 1 -> sets zoom/rotation.
-    // User swipes to image 2.
-    // User hits Done.
-    // Image 1 should be cropped as edited. Image 2 as is (or edited if visited).
-
-    // Problem: TransformationController state is lost if widget unmounts (PageView).
-    // Solution: We must hoist the TransformationController or its value (Matrix4) into _states.
-
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (c) => const Center(child: CircularProgressIndicator()),
+      builder: (c) => const Center(
+        child: CircularProgressIndicator(color: Colors.cyanAccent),
+      ),
     );
 
     List<File> resultFiles = [];
@@ -119,48 +87,24 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       final state = _states[i];
       final file = widget.files[i];
 
-      // If no changes, return original
       if (!state.hasChanges) {
         resultFiles.add(file);
         continue;
       }
 
-      // If changes, we need to crop.
-      // We need image dimensions to calculate crop rect from Matrix4.
-      // This is expensive if we have to decode valid images now.
-      // But we have to.
-
       try {
         final data = await file.readAsBytes();
         final image = await decodeImageFromList(data);
 
-        // Calculate crop params from state.matrix
-        // Logic same as CropEditor._onCropPressed
-        final matrix = state.matrix;
-        final double tx = matrix.getRow(0).w;
-        final double ty = matrix.getRow(1).w;
-        final double scale = matrix.getRow(0).x;
+        // We use the cropRect which is relative to baseSize
+        final rect = state.cropRect;
+        final base = state.baseSize;
 
-        // We need the "viewport" size and "base" size used during editing.
-        // This is tricky because it depends on screen layout.
-        // We stored viewportSize and baseSize in state during 'build' or 'layout'.
-
-        if (state.viewportSize == Size.zero || state.baseSize == Size.zero) {
-          // Fallback: full image
+        if (rect == Rect.zero || base == Size.zero) {
           resultFiles.add(file);
           image.dispose();
           continue;
         }
-
-        final double viewportWidth = state.viewportSize.width;
-        final double viewportHeight = state.viewportSize.height;
-        final double baseWidth = state.baseSize.width;
-        final double baseHeight = state.baseSize.height;
-
-        final double renderX = (-tx / scale).clamp(0.0, baseWidth);
-        final double renderY = (-ty / scale).clamp(0.0, baseHeight);
-        final double renderW = (viewportWidth / scale);
-        final double renderH = (viewportHeight / scale);
 
         final bool isRotated = state.rotation % 2 != 0;
         final double realImgW = isRotated
@@ -170,15 +114,19 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
             ? image.width.toDouble()
             : image.height.toDouble();
 
-        final double scaleX = realImgW / baseWidth;
-        final double scaleY = realImgH / baseHeight;
+        final double scaleX = realImgW / base.width;
+        final double scaleY = realImgH / base.height;
 
-        final int cropX = (renderX * scaleX).round();
-        final int cropY = (renderY * scaleY).round();
-        final int cropWidth = (renderW * scaleX).round();
-        final int cropHeight = (renderH * scaleY).round();
+        final int cropX = (rect.left * scaleX).round();
+        final int cropY = (rect.top * scaleY).round();
+        final int cropWidth = (rect.width * scaleX).round();
+        final int cropHeight = (rect.height * scaleY).round();
 
         image.dispose();
+
+        final int totalRotation =
+            (state.rotation * 90 + (state.fineRotation * 180 / math.pi))
+                .round();
 
         final croppedPath = await widget.cropNative(
           file.path,
@@ -186,7 +134,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
           cropY,
           cropWidth,
           cropHeight,
-          state.rotation * 90,
+          totalRotation,
           state.flipX,
         );
 
@@ -211,208 +159,301 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   Widget build(BuildContext context) {
     if (widget.files.isEmpty) return const SizedBox();
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Column(
-        children: [
-          Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: widget.files.length,
-              onPageChanged: (index) {
-                setState(() {
-                  _currentIndex = index;
-                });
-              },
-              itemBuilder: (context, index) {
-                return _SingleImageEditor(
-                  file: widget.files[index],
-                  state: _states[index],
-                  showGrid: widget.showGrid,
-                );
-              },
+      backgroundColor: const Color(0xFF000000),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  Text(
+                    "EDIT IMAGE",
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.7),
+                      letterSpacing: 1.5,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _onDone,
+                    child: const Text(
+                      "DONE",
+                      style: TextStyle(
+                        color: Color(0xFFFF5722),
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          // Thumbnail Strip & Controls
-          Container(
-            padding: const EdgeInsets.only(top: 10, bottom: 20),
-            color: const Color(0xFF121212),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 1. Aspect Ratio Selector
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  child: Row(
-                    children: [
-                      _buildRatioBtn("Original", null),
-                      _buildRatioBtn("1:1", 1.0),
-                      _buildRatioBtn("4:5", 4 / 5),
-                      _buildRatioBtn("16:9", 16 / 9),
-                      _buildRatioBtn("9:16", 9 / 16),
-                      _buildRatioBtn("3:4", 3 / 4),
-                    ],
-                  ),
+            Expanded(
+              child: PageView.builder(
+                controller: _pageController,
+                physics: _isDragging
+                    ? const NeverScrollableScrollPhysics()
+                    : const BouncingScrollPhysics(),
+                itemCount: widget.files.length,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+                itemBuilder: (context, index) {
+                  return _SingleImageEditor(
+                    file: widget.files[index],
+                    state: _states[index],
+                    showGrid: widget.showGrid,
+                    onDragStart: () => setState(() => _isDragging = true),
+                    onDragEnd: () => setState(() => _isDragging = false),
+                  );
+                },
+              ),
+            ),
+            // Bottom Panel
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A0A0A),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
                 ),
-                const SizedBox(height: 10),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    blurRadius: 20,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.only(top: 16, bottom: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_mode == _EditorMode.ratio) ...[
+                    // Ratios
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          _buildRatioBtn("FREE", null),
+                          _buildRatioBtn("1:1", 1.0),
+                          _buildRatioBtn("4:5", 4 / 5),
+                          _buildRatioBtn("3:4", 3 / 4),
+                          _buildRatioBtn("16:9", 16 / 9),
+                          _buildRatioBtn("9:16", 9 / 16),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ] else if (_mode == _EditorMode.rotate) ...[
+                    _buildRotationDialArea(),
+                  ],
 
-                // 2. Thumbnails
-                SizedBox(
-                  height: 60,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: widget.files.length,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    itemBuilder: (context, index) {
-                      final isSelected = index == _currentIndex;
-                      return GestureDetector(
-                        onTap: () {
-                          _pageController.jumpToPage(index);
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 4),
-                          decoration: BoxDecoration(
-                            border: isSelected
-                                ? Border.all(color: Colors.cyanAccent, width: 2)
-                                : null,
-                          ),
-                          child: Stack(
-                            children: [
-                              Image.file(
-                                widget.files[index],
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                              ),
-                              if (isSelected)
-                                Positioned.fill(
-                                  child: Container(
-                                    color: Colors.white.withValues(alpha: 0.1),
-                                  ),
+                  // Thumbnails (condensed)
+                  if (widget.files.length > 1) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 40,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: widget.files.length,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemBuilder: (context, index) {
+                          final isSelected = index == _currentIndex;
+                          return GestureDetector(
+                            onTap: () {
+                              _pageController.animateToPage(
+                                index,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeInOut,
+                              );
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.only(right: 8),
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? const Color(0xFFFF5722)
+                                      : Colors.white10,
+                                  width: 1.5,
                                 ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-                const Divider(color: Colors.white24, height: 1),
-                const SizedBox(height: 5),
-
-                // 3. Bottom Controls (Delete, Reset, Grid, Rotate, Flip, Done)
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // DELETE
-                      IconButton(
-                        tooltip: "Delete Image",
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.redAccent,
-                        ),
-                        onPressed: _deleteCurrentImage,
-                      ),
-                      // RESET
-                      IconButton(
-                        tooltip: "Reset",
-                        icon: const Icon(Icons.refresh, color: Colors.white54),
-                        onPressed: () {
-                          setState(() {
-                            final state = _states[_currentIndex];
-                            state.rotation = 0;
-                            state.flipX = false;
-                            state.matrix = Matrix4.identity();
-                            state.aspectRatio = null;
-                            state.hasChanges = false;
-                          });
+                                image: DecorationImage(
+                                  image: FileImage(widget.files[index]),
+                                  fit: BoxFit.cover,
+                                  colorFilter: isSelected
+                                      ? null
+                                      : ColorFilter.mode(
+                                          Colors.black.withValues(alpha: 0.3),
+                                          BlendMode.multiply,
+                                        ),
+                                ),
+                              ),
+                            ),
+                          );
                         },
                       ),
-                      // GRID
-                      IconButton(
-                        tooltip: "Toggle Grid",
-                        icon: Icon(
-                          _states[_currentIndex].showGrid
-                              ? Icons.grid_on
-                              : Icons.grid_off,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  // Tab Navigation
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildTabItem(
+                        Icons.crop,
+                        "Crop",
+                        _mode == _EditorMode.ratio,
+                        () => setState(() => _mode = _EditorMode.ratio),
+                      ),
+                      _buildTabItem(
+                        Icons.rotate_90_degrees_ccw_outlined,
+                        "Rotate",
+                        _mode == _EditorMode.rotate,
+                        () => setState(() => _mode = _EditorMode.rotate),
+                      ),
+                      _buildTabItem(
+                        _states[_currentIndex].showGrid
+                            ? Icons.grid_on
+                            : Icons.grid_off,
+                        "Grid",
+                        false,
+                        () {
                           setState(() {
                             _states[_currentIndex].showGrid =
                                 !_states[_currentIndex].showGrid;
                           });
                         },
                       ),
-                      // ROTATE
-                      IconButton(
-                        tooltip: "Rotate",
-                        icon: const Icon(
-                          Icons.rotate_left,
-                          color: Colors.white,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _states[_currentIndex].rotation =
-                                (_states[_currentIndex].rotation - 1) % 4;
-                            if (_states[_currentIndex].rotation < 0) {
-                              _states[_currentIndex].rotation += 4;
-                            }
-                            _states[_currentIndex].matrix = Matrix4.identity();
-                            _states[_currentIndex].hasChanges = true;
-                          });
-                        },
+                      _buildTabItem(Icons.flip, "Flip", false, () {
+                        setState(() {
+                          _states[_currentIndex].flipX =
+                              !_states[_currentIndex].flipX;
+                          _states[_currentIndex].hasChanges = true;
+                        });
+                      }),
+                      _buildTabItem(
+                        Icons.delete_outline,
+                        "Delete",
+                        false,
+                        _deleteCurrentImage,
+                        color: Colors.redAccent.withValues(alpha: 0.8),
                       ),
-                      // FLIP
-                      IconButton(
-                        tooltip: "Flip",
-                        icon: const Icon(Icons.flip, color: Colors.white),
-                        onPressed: () {
-                          setState(() {
-                            _states[_currentIndex].flipX =
-                                !_states[_currentIndex].flipX;
-                            _states[_currentIndex].hasChanges = true;
-                          });
-                        },
-                      ),
-                      const SizedBox(width: 10),
-                      // DONE
-                      TextButton(
-                        onPressed: _onDone,
-                        style: TextButton.styleFrom(
-                          backgroundColor: Colors.cyanAccent,
-                          foregroundColor: Colors.black,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 8,
-                          ),
-                        ),
-                        child: const Text(
-                          "Done",
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
                     ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
+  Widget _buildTabItem(
+    IconData icon,
+    String label,
+    bool isSelected,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
+    final activeColor = color ?? const Color(0xFFFF5722);
+    final inactiveColor = Colors.white54;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? activeColor : inactiveColor,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? activeColor : inactiveColor,
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRotationDialArea() {
+    final state = _states[_currentIndex];
+    return Column(
+      children: [
+        Text(
+          "${(state.fineRotation * 180 / math.pi).toStringAsFixed(1)}°",
+          style: const TextStyle(
+            color: Color(0xFFFF5722),
+            fontSize: 12,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 60,
+          child: _RotationDial(
+            value: state.fineRotation,
+            onChanged: (val) {
+              setState(() {
+                state.fineRotation = val;
+                state.hasChanges = true;
+              });
+            },
+          ),
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.history, color: Colors.white54),
+              onPressed: () {
+                setState(() {
+                  state.fineRotation = 0;
+                  state.hasChanges = true;
+                });
+              },
+            ),
+            const SizedBox(width: 20),
+            IconButton(
+              icon: const Icon(Icons.rotate_right, color: Colors.white54),
+              onPressed: () {
+                setState(() {
+                  state.rotation = (state.rotation + 1) % 4;
+                  state.hasChanges = true;
+                });
+              },
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildRatioBtn(String label, double? ratio) {
-    // Check equality with tolerance
     final currentRatio = _states[_currentIndex].aspectRatio;
     final bool isSelected =
         (ratio == null && currentRatio == null) ||
@@ -421,31 +462,33 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
             (ratio - currentRatio).abs() < 0.001);
 
     return Padding(
-      padding: const EdgeInsets.only(right: 15),
-      child: GestureDetector(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
         onTap: () {
           setState(() {
             _states[_currentIndex].aspectRatio = ratio;
-            _states[_currentIndex].matrix =
-                Matrix4.identity(); // Reset Zoom on ratio change
             _states[_currentIndex].hasChanges = true;
           });
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.cyanAccent : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
+            color: isSelected
+                ? const Color(0xFFFF5722).withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? Colors.cyanAccent : Colors.white30,
+              color: isSelected ? const Color(0xFFFF5722) : Colors.white24,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected ? Colors.black : Colors.white70,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+              color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 11,
             ),
           ),
         ),
@@ -456,67 +499,96 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
 class _EditorState {
   int rotation = 0;
+  double fineRotation = 0.0; // In radians
   bool flipX = false;
-  Matrix4 matrix = Matrix4.identity();
-  Size viewportSize = Size.zero;
-  Size baseSize = Size.zero;
-  bool hasChanges = false;
-  double? aspectRatio; // null = Original
+  double? aspectRatio;
   bool showGrid = true;
+  bool hasChanges = false;
+
+  // These are calculated/updated by the editor
+  Size baseSize = Size.zero;
+  Rect cropRect = Rect.zero;
+
+  void reset() {
+    rotation = 0;
+    fineRotation = 0.0;
+    flipX = false;
+    aspectRatio = null;
+    showGrid = true;
+    hasChanges = false;
+    cropRect = Rect.zero;
+  }
 }
 
 class _SingleImageEditor extends StatefulWidget {
   final File file;
   final _EditorState state;
   final bool showGrid;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
 
   const _SingleImageEditor({
     required this.file,
     required this.state,
     required this.showGrid,
+    required this.onDragStart,
+    required this.onDragEnd,
   });
 
   @override
   State<_SingleImageEditor> createState() => _SingleImageEditorState();
 }
 
-class _SingleImageEditorState extends State<_SingleImageEditor> {
+class _SingleImageEditorState extends State<_SingleImageEditor>
+    with TickerProviderStateMixin {
   ui.Image? _image;
   bool _loading = true;
-  final TransformationController _transformationController =
-      TransformationController();
+  bool _isDragging = false;
+
+  late AnimationController _rotationController;
+  late Animation<double> _rotationAnimation;
 
   @override
   void initState() {
     super.initState();
     _loadImage();
-    _transformationController.value = widget.state.matrix;
-    _transformationController.addListener(_onTransformChange);
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _rotationAnimation = Tween<double>(begin: 0, end: 0).animate(
+      CurvedAnimation(parent: _rotationController, curve: Curves.easeOutBack),
+    );
   }
 
-  void _onTransformChange() {
-    widget.state.matrix = _transformationController.value;
-    widget.state.hasChanges = true;
+  @override
+  void dispose() {
+    _rotationController.dispose();
+    _image?.dispose();
+    super.dispose();
   }
 
   @override
   void didUpdateWidget(covariant _SingleImageEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.file != oldWidget.file) {
-      _loadImage();
-    }
-    // Update controller if state changed externally (e.g. rotation reset)
-    if (widget.state.matrix != _transformationController.value) {
-      _transformationController.value = widget.state.matrix;
+    if (widget.state.rotation != oldWidget.state.rotation) {
+      _animateRotation();
     }
   }
 
-  @override
-  void dispose() {
-    _transformationController.removeListener(_onTransformChange);
-    _transformationController.dispose();
-    _image?.dispose();
-    super.dispose();
+  void _animateRotation() {
+    final double targetAngle = widget.state.rotation * math.pi / 2;
+    _rotationAnimation =
+        Tween<double>(
+          begin: _rotationAnimation.value,
+          end: targetAngle,
+        ).animate(
+          CurvedAnimation(
+            parent: _rotationController,
+            curve: Curves.easeOutQuart,
+          ),
+        );
+    _rotationController.forward(from: 0);
   }
 
   Future<void> _loadImage() async {
@@ -534,143 +606,136 @@ class _SingleImageEditorState extends State<_SingleImageEditor> {
     }
   }
 
-  void _calculateLayout(BoxConstraints constraints) {
-    if (_image == null) return;
-
-    final double maxWidth = constraints.maxWidth;
-    final double maxHeight = constraints.maxHeight;
-
-    double viewportWidth, viewportHeight;
-
-    // 1. Calculate Viewport Size (the cropping box)
-    if (widget.state.aspectRatio == null) {
-      // Original Ratio (of the transformed image).
-      // If rotated 90 or 270 degrees, we swap Width/Height logic.
-      final bool isRotated = widget.state.rotation % 2 != 0;
-      final double w = isRotated
-          ? _image!.height.toDouble()
-          : _image!.width.toDouble();
-      final double h = isRotated
-          ? _image!.width.toDouble()
-          : _image!.height.toDouble();
-      final double ratio = w / h;
-
-      if (ratio > 1) {
-        // Landscape image: fill width, scale height down.
-        viewportWidth = maxWidth;
-        viewportHeight = maxWidth / ratio;
-      } else {
-        // Portrait image: fill height (capped by width), scale width down.
-        viewportHeight = maxWidth; // initial probe
-        viewportWidth = viewportHeight * ratio;
-      }
-    } else {
-      // Fixed Ratios (1:1, 4:5, etc.)
-      if (widget.state.aspectRatio! >= 1) {
-        viewportWidth = maxWidth;
-        viewportHeight = maxWidth / widget.state.aspectRatio!;
-      } else {
-        viewportHeight = maxWidth;
-        viewportWidth = viewportHeight * widget.state.aspectRatio!;
-      }
-    }
-
-    if (viewportHeight > maxHeight) {
-      final double scale = maxHeight / viewportHeight;
-      viewportHeight = maxHeight;
-      viewportWidth = viewportWidth * scale;
-    }
-
-    widget.state.viewportSize = Size(viewportWidth, viewportHeight);
-
-    // Base Image Size
-    final bool isRotated = widget.state.rotation % 2 != 0;
-    final double realImgW = isRotated
-        ? _image!.height.toDouble()
-        : _image!.width.toDouble();
-    final double realImgH = isRotated
-        ? _image!.width.toDouble()
-        : _image!.height.toDouble();
-
-    final double imgRatio = realImgW / realImgH; // transformed aspect ratio
-    final double viewportRatio = viewportWidth / viewportHeight;
-
-    double baseWidth, baseHeight;
-
-    if (imgRatio > viewportRatio) {
-      baseHeight = viewportHeight;
-      baseWidth = baseHeight * imgRatio;
-    } else {
-      baseWidth = viewportWidth;
-      baseHeight = baseWidth / imgRatio;
-    }
-
-    widget.state.baseSize = Size(baseWidth, baseHeight);
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading || _image == null) {
       return const Center(
-        child: CircularProgressIndicator(color: Colors.cyanAccent),
+        child: CircularProgressIndicator(color: Color(0xFFFF5722)),
       );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _calculateLayout(constraints);
+        final double maxWidth = constraints.maxWidth - 40;
+        final double maxHeight = constraints.maxHeight - 40;
 
-        final viewportWidth = widget.state.viewportSize.width;
-        final viewportHeight = widget.state.viewportSize.height;
-        final baseWidth = widget.state.baseSize.width;
-        final baseHeight = widget.state.baseSize.height;
+        final bool isRotated = widget.state.rotation % 2 != 0;
+        final double imgW = isRotated
+            ? _image!.height.toDouble()
+            : _image!.width.toDouble();
+        final double imgH = isRotated
+            ? _image!.width.toDouble()
+            : _image!.height.toDouble();
+        final double imgRatio = imgW / imgH;
+
+        double baseW, baseH;
+        if (imgRatio > maxWidth / maxHeight) {
+          baseW = maxWidth;
+          baseH = maxWidth / imgRatio;
+        } else {
+          baseH = maxHeight;
+          baseW = maxHeight * imgRatio;
+        }
+
+        widget.state.baseSize = Size(baseW, baseH);
+
+        // Initialize cropRect if zero
+        if (widget.state.cropRect == Rect.zero) {
+          widget.state.cropRect = Rect.fromLTWH(0, 0, baseW, baseH);
+        }
+
+        // Apply aspect ratio constraint if needed
+        if (widget.state.aspectRatio != null) {
+          _applyAspectRatio(widget.state.aspectRatio!, baseW, baseH);
+        }
 
         return Center(
           child: Stack(
-            alignment: Alignment.center,
             children: [
+              // Non-cropped background (dimmed)
               SizedBox(
-                width: viewportWidth,
-                height: viewportHeight,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: ClipRect(
-                    child: InteractiveViewer(
-                      transformationController: _transformationController,
-                      minScale: 1.0,
-                      maxScale: 3.0,
-                      constrained: false,
-                      boundaryMargin: EdgeInsets.zero,
-                      child: SizedBox(
-                        width: baseWidth,
-                        height: baseHeight,
-                        child: Transform.scale(
-                          scaleX: widget.state.flipX ? -1 : 1,
-                          child: Transform.rotate(
-                            angle: widget.state.rotation * math.pi / 2,
-                            child: Image.file(widget.file, fit: BoxFit.fill),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                width: baseW,
+                height: baseH,
+                child: Opacity(opacity: 0.3, child: _buildImage(baseW, baseH)),
               ),
-              if (widget.state.showGrid)
-                IgnorePointer(
-                  child: Container(
-                    width: viewportWidth,
-                    height: viewportHeight,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.white30),
-                    ),
-                    // We can reuse GridPainter from crop_editor.dart if made public, or duplicate.
-                    // Duplicating for now for isolation.
-                    child: CustomPaint(painter: _MultiGridPainter()),
-                  ),
-                ),
+              // Crop Box with visible image
+              _CropBox(
+                image: _buildImage(baseW, baseH),
+                state: widget.state,
+                availableSize: Size(baseW, baseH),
+                showGrid: widget.state.showGrid || _isDragging,
+                onChanged: (rect) {
+                  setState(() {
+                    widget.state.cropRect = rect;
+                    widget.state.hasChanges = true;
+                  });
+                },
+                onDragStart: () {
+                  _isDragging = true;
+                  widget.onDragStart();
+                  setState(() {});
+                },
+                onDragEnd: () {
+                  _isDragging = false;
+                  widget.onDragEnd();
+                  setState(() {});
+                },
+              ),
             ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _applyAspectRatio(double ratio, double baseW, double baseH) {
+    Rect rect = widget.state.cropRect;
+    double currentW = rect.width;
+    double currentH = rect.height;
+
+    double targetW, targetH;
+    if (ratio > currentW / currentH) {
+      targetW = currentW;
+      targetH = currentW / ratio;
+      if (targetH > baseH) {
+        targetH = baseH;
+        targetW = targetH * ratio;
+      }
+    } else {
+      targetH = currentH;
+      targetW = targetH * ratio;
+      if (targetW > baseW) {
+        targetW = baseW;
+        targetH = targetW / ratio;
+      }
+    }
+
+    double left = rect.left + (currentW - targetW) / 2;
+    double top = rect.top + (currentH - targetH) / 2;
+
+    // Clamp
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (left + targetW > baseW) left = baseW - targetW;
+    if (top + targetH > baseH) top = baseH - targetH;
+
+    widget.state.cropRect = Rect.fromLTWH(left, top, targetW, targetH);
+  }
+
+  Widget _buildImage(double w, double h) {
+    return AnimatedBuilder(
+      animation: _rotationAnimation,
+      builder: (context, child) {
+        return Transform.scale(
+          scaleX: widget.state.flipX ? -1 : 1,
+          child: Transform.rotate(
+            angle: _rotationAnimation.value + widget.state.fineRotation,
+            child: Image.file(
+              widget.file,
+              width: w,
+              height: h,
+              fit: BoxFit.fill,
+            ),
           ),
         );
       },
@@ -678,36 +743,357 @@ class _SingleImageEditorState extends State<_SingleImageEditor> {
   }
 }
 
-class _MultiGridPainter extends CustomPainter {
+class _CropBox extends StatelessWidget {
+  final Widget image;
+  final _EditorState state;
+  final Size availableSize;
+  final bool showGrid;
+  final Function(Rect) onChanged;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
+
+  const _CropBox({
+    required this.image,
+    required this.state,
+    required this.availableSize,
+    required this.showGrid,
+    required this.onChanged,
+    required this.onDragStart,
+    required this.onDragEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rect = state.cropRect;
+
+    return Positioned(
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // The visible part of the image
+          Positioned.fill(
+            child: ClipRect(
+              child: OverflowBox(
+                alignment: Alignment.center,
+                minWidth: availableSize.width,
+                maxWidth: availableSize.width,
+                minHeight: availableSize.height,
+                maxHeight: availableSize.height,
+                child: Transform.translate(
+                  offset: Offset(
+                    (availableSize.width / 2) - (rect.left + rect.width / 2),
+                    (availableSize.height / 2) - (rect.top + rect.height / 2),
+                  ),
+                  child: image,
+                ),
+              ),
+            ),
+          ),
+          // Grid
+          if (showGrid)
+            Positioned.fill(
+              child: IgnorePointer(child: CustomPaint(painter: _GridPainter())),
+            ),
+          // Border
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.white, width: 1.5),
+              ),
+            ),
+          ),
+          // Draggable central area
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart: (_) => onDragStart(),
+              onPanEnd: (_) => onDragEnd(),
+              onPanUpdate: (details) {
+                double newLeft = rect.left + details.delta.dx;
+                double newTop = rect.top + details.delta.dy;
+
+                newLeft = newLeft.clamp(0, availableSize.width - rect.width);
+                newTop = newTop.clamp(0, availableSize.height - rect.height);
+
+                onChanged(
+                  Rect.fromLTWH(newLeft, newTop, rect.width, rect.height),
+                );
+              },
+            ),
+          ),
+          // Handles
+          ..._buildHandles(),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildHandles() {
+    return [
+      _handle(Alignment.topLeft, (d) => _resize(d, top: true, left: true)),
+      _handle(Alignment.topRight, (d) => _resize(d, top: true, right: true)),
+      _handle(
+        Alignment.bottomLeft,
+        (d) => _resize(d, bottom: true, left: true),
+      ),
+      _handle(
+        Alignment.bottomRight,
+        (d) => _resize(d, bottom: true, right: true),
+      ),
+      _handle(Alignment.topCenter, (d) => _resize(d, top: true)),
+      _handle(Alignment.bottomCenter, (d) => _resize(d, bottom: true)),
+      _handle(Alignment.centerLeft, (d) => _resize(d, left: true)),
+      _handle(Alignment.centerRight, (d) => _resize(d, right: true)),
+    ];
+  }
+
+  Widget _handle(Alignment alignment, Function(DragUpdateDetails) onUpdate) {
+    return Positioned.fill(
+      child: Align(
+        alignment: alignment,
+        child: GestureDetector(
+          onPanStart: (_) => onDragStart(),
+          onPanEnd: (_) => onDragEnd(),
+          onPanUpdate: onUpdate,
+          child: Container(
+            width: 25,
+            height: 25,
+            color: Colors.transparent,
+            child: Center(
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _resize(
+    DragUpdateDetails details, {
+    bool top = false,
+    bool bottom = false,
+    bool left = false,
+    bool right = false,
+  }) {
+    Rect rect = state.cropRect;
+    double? ratio = state.aspectRatio;
+
+    double dx = details.delta.dx;
+    double dy = details.delta.dy;
+
+    double newLeft = rect.left;
+    double newTop = rect.top;
+    double newWidth = rect.width;
+    double newHeight = rect.height;
+
+    if (left) {
+      newLeft += dx;
+      newWidth -= dx;
+    } else if (right) {
+      newWidth += dx;
+    }
+
+    if (top) {
+      newTop += dy;
+      newHeight -= dy;
+    } else if (bottom) {
+      newHeight += dy;
+    }
+
+    // Min size
+    const minSize = 40.0;
+    if (newWidth < minSize) {
+      newWidth = minSize;
+      if (left) newLeft = rect.right - minSize;
+    }
+    if (newHeight < minSize) {
+      newHeight = minSize;
+      if (top) newTop = rect.bottom - minSize;
+    }
+
+    // Aspect ratio enforcement
+    if (ratio != null) {
+      if (left || right) {
+        newHeight = newWidth / ratio;
+      } else {
+        newWidth = newHeight * ratio;
+      }
+
+      // Re-adjust top/left if they were changed
+      if (top) newTop = rect.bottom - newHeight;
+      if (left) newLeft = rect.right - newWidth;
+    }
+
+    // Boundary clamp
+    if (newLeft < 0) {
+      if (ratio != null) {
+        newWidth = rect.right;
+        newHeight = newWidth / ratio;
+        if (top) newTop = rect.bottom - newHeight;
+      } else {
+        newWidth = rect.right;
+      }
+      newLeft = 0;
+    }
+    if (newTop < 0) {
+      if (ratio != null) {
+        newHeight = rect.bottom;
+        newWidth = newHeight * ratio;
+        if (left) newLeft = rect.right - newWidth;
+      } else {
+        newHeight = rect.bottom;
+      }
+      newTop = 0;
+    }
+    if (newLeft + newWidth > availableSize.width) {
+      newWidth = availableSize.width - newLeft;
+      if (ratio != null) newHeight = newWidth / ratio;
+    }
+    if (newTop + newHeight > availableSize.height) {
+      newHeight = availableSize.height - newTop;
+      if (ratio != null) newWidth = newHeight * ratio;
+    }
+
+    onChanged(Rect.fromLTWH(newLeft, newTop, newWidth, newHeight));
+  }
+}
+
+class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.5;
+
+    for (int i = 1; i < 3; i++) {
+      canvas.drawLine(
+        Offset(size.width * i / 3, 0),
+        Offset(size.width * i / 3, size.height),
+        paint,
+      );
+      canvas.drawLine(
+        Offset(0, size.height * i / 3),
+        Offset(size.width, size.height * i / 3),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _RotationDial extends StatefulWidget {
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  const _RotationDial({required this.value, required this.onChanged});
+
+  @override
+  State<_RotationDial> createState() => _RotationDialState();
+}
+
+class _RotationDialState extends State<_RotationDial> {
+  double _dragOffset = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _dragOffset = widget.value * 200; // Scale for dragging
+  }
+
+  @override
+  void didUpdateWidget(covariant _RotationDial oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isDragging) {
+      _dragOffset = widget.value * 200;
+    }
+  }
+
+  bool _isDragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onPanStart: (_) => _isDragging = true,
+      onPanEnd: (_) {
+        _isDragging = false;
+        widget.onChanged(_dragOffset / 200);
+      },
+      onPanUpdate: (details) {
+        setState(() {
+          _dragOffset -= details.delta.dx;
+          _dragOffset = _dragOffset.clamp(
+            -math.pi / 4 * 200,
+            math.pi / 4 * 200,
+          );
+          widget.onChanged(_dragOffset / 200);
+        });
+      },
+      child: CustomPaint(
+        size: const Size(double.infinity, 60),
+        painter: _RotationDialPainter(offset: _dragOffset),
+      ),
+    );
+  }
+}
+
+class _RotationDialPainter extends CustomPainter {
+  final double offset;
+  _RotationDialPainter({required this.offset});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white24
       ..strokeWidth = 1.0;
 
+    final center = size.width / 2;
+    const spacing = 10.0;
+
+    for (double i = -1000; i <= 1000; i += spacing) {
+      final x = center + (i - offset);
+      if (x < 0 || x > size.width) continue;
+
+      double height = 10;
+      if ((i / spacing).round() % 5 == 0) {
+        height = 20;
+        paint.color = Colors.white54;
+      } else {
+        paint.color = Colors.white24;
+      }
+
+      canvas.drawLine(
+        Offset(x, size.height / 2 - height / 2),
+        Offset(x, size.height / 2 + height / 2),
+        paint,
+      );
+    }
+
+    // Indicator
+    paint.color = const Color(0xFFFF5722);
+    paint.strokeWidth = 2.0;
     canvas.drawLine(
-      Offset(size.width / 3, 0),
-      Offset(size.width / 3, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(2 * size.width / 3, 0),
-      Offset(2 * size.width / 3, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(0, size.height / 3),
-      Offset(size.width, size.height / 3),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(0, 2 * size.height / 3),
-      Offset(size.width, 2 * size.height / 3),
+      Offset(center, size.height / 2 - 25),
+      Offset(center, size.height / 2 + 25),
       paint,
     );
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _RotationDialPainter oldDelegate) =>
+      oldDelegate.offset != offset;
 }
