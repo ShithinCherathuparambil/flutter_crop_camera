@@ -39,6 +39,8 @@ void main() {
                 DraggableOverlay(
                   item: overlay,
                   onDelete: () {},
+                  onDragStart: () {},
+                  onDragEnd: () {},
                   onUpdate: (_) {},
                   onTap: () {},
                   isSelected: false,
@@ -66,6 +68,8 @@ void main() {
                 DraggableOverlay(
                   item: overlay,
                   onDelete: () {},
+                  onDragStart: () {},
+                  onDragEnd: () {},
                   onUpdate: (_) {},
                   onTap: () {},
                   isSelected: true, // Selected

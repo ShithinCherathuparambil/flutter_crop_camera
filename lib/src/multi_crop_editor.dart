@@ -3,8 +3,10 @@ import 'dart:ui' as ui;
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-enum _EditorMode { ratio, rotate }
+import 'package:path_provider/path_provider.dart';
+import 'shared_crop_widgets.dart';
+import 'filters.dart';
+import 'overlays.dart';
 
 class MultiCropEditor extends StatefulWidget {
   final List<File> files;
@@ -38,14 +40,14 @@ class MultiCropEditor extends StatefulWidget {
 class _MultiCropEditorState extends State<MultiCropEditor> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
-  late List<_EditorState> _states;
+  late List<CropEditorState> _states;
   bool _isDragging = false;
-  _EditorMode _mode = _EditorMode.ratio; // Current active tab
+  EditorMode _mode = EditorMode.ratio; // Current active tab
 
   @override
   void initState() {
     super.initState();
-    _states = List.generate(widget.files.length, (index) => _EditorState());
+    _states = List.generate(widget.files.length, (index) => CropEditorState());
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
   }
 
@@ -77,7 +79,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       context: context,
       barrierDismissible: false,
       builder: (c) => const Center(
-        child: CircularProgressIndicator(color: Colors.cyanAccent),
+        child: CircularProgressIndicator(color: Color(0xFFFF5722)),
       ),
     );
 
@@ -94,9 +96,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
       try {
         final data = await file.readAsBytes();
-        final image = await decodeImageFromList(data);
+        final ui.Image image = await decodeImageFromList(data);
 
-        // We use the cropRect which is relative to baseSize
         final rect = state.cropRect;
         final base = state.baseSize;
 
@@ -122,24 +123,80 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         final int cropWidth = (rect.width * scaleX).round();
         final int cropHeight = (rect.height * scaleY).round();
 
-        image.dispose();
+        // 1. Setup Recording Pipeline
+        final ui.PictureRecorder recorder = ui.PictureRecorder();
+        final Canvas canvas = Canvas(recorder);
 
-        final int totalRotation =
-            (state.rotation * 90 + (state.fineRotation * 180 / math.pi))
-                .round();
+        if (cropWidth <= 0 || cropHeight <= 0) {
+          throw Exception("Invalid crop dimensions");
+        }
 
-        final croppedPath = await widget.cropNative(
-          file.path,
-          cropX,
-          cropY,
+        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+
+        // 2. Draw Full Image with transformations
+        final recorderFull = ui.PictureRecorder();
+        final canvasFull = Canvas(recorderFull);
+        final Paint paint = Paint()
+          ..colorFilter = state.activeFilter.colorFilter;
+
+        canvasFull.save();
+        if (state.rotation == 1) {
+          canvasFull.translate(image.height.toDouble(), 0);
+          canvasFull.rotate(math.pi / 2);
+        } else if (state.rotation == 2) {
+          canvasFull.translate(image.width.toDouble(), image.height.toDouble());
+          canvasFull.rotate(math.pi);
+        } else if (state.rotation == 3) {
+          canvasFull.translate(0, image.width.toDouble());
+          canvasFull.rotate(3 * math.pi / 2);
+        }
+
+        if (state.fineRotation != 0) {
+          canvasFull.translate(realImgW / 2, realImgH / 2);
+          canvasFull.rotate(state.fineRotation);
+          canvasFull.translate(-realImgW / 2, -realImgH / 2);
+        }
+
+        if (state.flipX) {
+          canvasFull.translate(realImgW, 0);
+          canvasFull.scale(-1, 1);
+        }
+
+        canvasFull.drawImage(image, Offset.zero, paint);
+
+        // 3. Draw Overlays
+        final double overlayScale = realImgW / base.width;
+        for (var item in state.overlays) {
+          if (item is TextOverlay) {
+            _drawTextOverlay(canvasFull, item, overlayScale);
+          } else if (item is StickerOverlay) {
+            _drawStickerOverlay(canvasFull, item, overlayScale);
+          }
+        }
+
+        canvasFull.restore();
+        final pictureFull = recorderFull.endRecording();
+        canvas.drawPicture(pictureFull);
+
+        final pictureFinal = recorder.endRecording();
+        final ui.Image imgFinal = await pictureFinal.toImage(
           cropWidth,
           cropHeight,
-          totalRotation,
-          state.flipX,
+        );
+        final ByteData? pngBytes = await imgFinal.toByteData(
+          format: ui.ImageByteFormat.png,
         );
 
-        if (croppedPath != null) {
-          resultFiles.add(File(croppedPath));
+        image.dispose();
+        imgFinal.dispose();
+
+        if (pngBytes != null) {
+          final tempDir = await getTemporaryDirectory();
+          final File savedFile = File(
+            '${tempDir.path}/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png',
+          );
+          await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
+          resultFiles.add(savedFile);
         } else {
           resultFiles.add(file);
         }
@@ -238,7 +295,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_mode == _EditorMode.ratio) ...[
+                  if (_mode == EditorMode.ratio) ...[
                     // Ratios
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -255,8 +312,21 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                  ] else if (_mode == _EditorMode.rotate) ...[
+                  ] else if (_mode == EditorMode.rotate) ...[
+                    // Rotations
                     _buildRotationDialArea(),
+                  ] else if (_mode == EditorMode.filter) ...[
+                    // Filters
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: PresetFilters.list
+                            .map((f) => _buildFilterItem(f))
+                            .toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                   ],
 
                   // Thumbnails (condensed)
@@ -316,14 +386,32 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                       _buildTabItem(
                         Icons.crop,
                         "Crop",
-                        _mode == _EditorMode.ratio,
-                        () => setState(() => _mode = _EditorMode.ratio),
+                        _mode == EditorMode.ratio,
+                        () => setState(() => _mode = EditorMode.ratio),
                       ),
                       _buildTabItem(
                         Icons.rotate_90_degrees_ccw_outlined,
                         "Rotate",
-                        _mode == _EditorMode.rotate,
-                        () => setState(() => _mode = _EditorMode.rotate),
+                        _mode == EditorMode.rotate,
+                        () => setState(() => _mode = EditorMode.rotate),
+                      ),
+                      _buildTabItem(
+                        Icons.filter_vintage_outlined,
+                        "Filter",
+                        _mode == EditorMode.filter,
+                        () => setState(() => _mode = EditorMode.filter),
+                      ),
+                      _buildTabItem(
+                        Icons.text_fields,
+                        "Text",
+                        _mode == EditorMode.text,
+                        _addText,
+                      ),
+                      _buildTabItem(
+                        Icons.emoji_emotions_outlined,
+                        "Sticker",
+                        _mode == EditorMode.sticker,
+                        _addSticker,
                       ),
                       _buildTabItem(
                         _states[_currentIndex].showGrid
@@ -415,7 +503,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         const SizedBox(height: 10),
         SizedBox(
           height: 60,
-          child: _RotationDial(
+          child: RotationDial(
             value: state.fineRotation,
             onChanged: (val) {
               setState(() {
@@ -451,6 +539,246 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         ),
       ],
     );
+  }
+
+  Widget _buildFilterItem(Filter filter) {
+    final state = _states[_currentIndex];
+    final bool isSelected = state.activeFilter.name == filter.name;
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: GestureDetector(
+        onTap: () => setState(() {
+          state.activeFilter = filter;
+          state.hasChanges = true;
+        }),
+        child: Column(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                border: isSelected
+                    ? Border.all(color: const Color(0xFFFF5722), width: 2)
+                    : null,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: ColorFiltered(
+                  colorFilter: filter.colorFilter,
+                  child: Image.file(
+                    widget.files[_currentIndex],
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              filter.name,
+              style: TextStyle(
+                color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addText() {
+    setState(() => _mode = EditorMode.text);
+    showDialog(
+      context: context,
+      builder: (context) {
+        String text = "";
+        return AlertDialog(
+          backgroundColor: Colors.grey[900],
+          title: const Text("Add Text", style: TextStyle(color: Colors.white)),
+          content: TextField(
+            style: const TextStyle(color: Colors.white),
+            autofocus: true,
+            onChanged: (val) => text = val,
+            decoration: const InputDecoration(
+              hintText: "Enter text...",
+              hintStyle: TextStyle(color: Colors.white54),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: Color(0xFFFF5722)),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                "Cancel",
+                style: TextStyle(color: Colors.white54),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                if (text.isNotEmpty) {
+                  setState(() {
+                    final state = _states[_currentIndex];
+                    state.overlays.add(
+                      TextOverlay(
+                        id: DateTime.now().toString(),
+                        text: text,
+                        position: Offset(
+                          state.baseSize.width / 2,
+                          state.baseSize.height / 2,
+                        ),
+                      ),
+                    );
+                    state.selectedOverlayId = null;
+                    state.hasChanges = true;
+                  });
+                }
+                Navigator.pop(context);
+              },
+              child: const Text(
+                "Add",
+                style: TextStyle(color: Color(0xFFFF5722)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _addSticker() {
+    setState(() => _mode = EditorMode.sticker);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.black,
+      builder: (context) {
+        final List<String> emojis = [
+          "😀",
+          "😎",
+          "😍",
+          "🥳",
+          "🔥",
+          "🎉",
+          "❤️",
+          "🚀",
+          "💯",
+          "🌟",
+          "👻",
+          "👍",
+          "👑",
+          "⚽️",
+          "🐶",
+          "🍕",
+        ];
+        return Container(
+          padding: const EdgeInsets.all(20),
+          height: 300,
+          child: GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+            ),
+            itemCount: emojis.length,
+            itemBuilder: (context, index) {
+              return GestureDetector(
+                onTap: () {
+                  setState(() {
+                    final state = _states[_currentIndex];
+                    state.overlays.add(
+                      StickerOverlay(
+                        id: DateTime.now().toString(),
+                        text: emojis[index],
+                        position: Offset(
+                          state.baseSize.width / 2,
+                          state.baseSize.height / 2,
+                        ),
+                      ),
+                    );
+                    state.selectedOverlayId = null;
+                    state.hasChanges = true;
+                  });
+                  Navigator.pop(context);
+                },
+                child: Center(
+                  child: Text(
+                    emojis[index],
+                    style: const TextStyle(fontSize: 40),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _drawTextOverlay(
+    ui.Canvas canvas,
+    TextOverlay item,
+    double scaleFactor,
+  ) {
+    canvas.save();
+    canvas.translate(
+      item.position.dx * scaleFactor,
+      item.position.dy * scaleFactor,
+    );
+    canvas.rotate(item.rotation);
+    canvas.scale(item.scale * scaleFactor);
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: item.text,
+        style: TextStyle(
+          color: item.color,
+          fontSize: item.fontSize,
+          fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(
+              offset: Offset(scaleFactor, scaleFactor),
+              blurRadius: 4 * scaleFactor,
+              color: Colors.black.withValues(alpha: 0.5),
+            ),
+          ],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(-textPainter.width / 2, -textPainter.height / 2),
+    );
+    canvas.restore();
+  }
+
+  void _drawStickerOverlay(
+    ui.Canvas canvas,
+    StickerOverlay item,
+    double scaleFactor,
+  ) {
+    canvas.save();
+    canvas.translate(
+      item.position.dx * scaleFactor,
+      item.position.dy * scaleFactor,
+    );
+    canvas.rotate(item.rotation);
+    canvas.scale(item.scale * scaleFactor);
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: item.text,
+        style: TextStyle(fontSize: item.fontSize, color: Colors.white),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(-textPainter.width / 2, -textPainter.height / 2),
+    );
+    canvas.restore();
   }
 
   Widget _buildRatioBtn(String label, double? ratio) {
@@ -497,32 +825,9 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   }
 }
 
-class _EditorState {
-  int rotation = 0;
-  double fineRotation = 0.0; // In radians
-  bool flipX = false;
-  double? aspectRatio;
-  bool showGrid = true;
-  bool hasChanges = false;
-
-  // These are calculated/updated by the editor
-  Size baseSize = Size.zero;
-  Rect cropRect = Rect.zero;
-
-  void reset() {
-    rotation = 0;
-    fineRotation = 0.0;
-    flipX = false;
-    aspectRatio = null;
-    showGrid = true;
-    hasChanges = false;
-    cropRect = Rect.zero;
-  }
-}
-
 class _SingleImageEditor extends StatefulWidget {
   final File file;
-  final _EditorState state;
+  final CropEditorState state;
   final bool showGrid;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
@@ -594,12 +899,37 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
   Future<void> _loadImage() async {
     try {
       final data = await widget.file.readAsBytes();
-      final image = await decodeImageFromList(data);
+      final buffer = await ui.ImmutableBuffer.fromUint8List(data);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+
+      // Downsample for preview UI (max 1280px)
+      const double maxPreviewSize = 1280.0;
+      int? targetWidth;
+      int? targetHeight;
+
+      if (descriptor.width > maxPreviewSize ||
+          descriptor.height > maxPreviewSize) {
+        if (descriptor.width > descriptor.height) {
+          targetWidth = maxPreviewSize.toInt();
+        } else {
+          targetHeight = maxPreviewSize.toInt();
+        }
+      }
+
+      final codec = await descriptor.instantiateCodec(
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+      );
+      final frame = await codec.getNextFrame();
+      final image = frame.image;
+
       if (mounted) {
         setState(() {
           _image = image;
           _loading = false;
         });
+      } else {
+        image.dispose();
       }
     } catch (e) {
       debugPrint("Error loading image: $e");
@@ -659,7 +989,7 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
                 child: Opacity(opacity: 0.3, child: _buildImage(baseW, baseH)),
               ),
               // Crop Box with visible image
-              _CropBox(
+              CropBox(
                 image: _buildImage(baseW, baseH),
                 state: widget.state,
                 availableSize: Size(baseW, baseH),
@@ -680,6 +1010,30 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
                   widget.onDragEnd();
                   setState(() {});
                 },
+              ),
+              // Overlays
+              ...widget.state.overlays.map(
+                (item) => DraggableOverlay(
+                  item: item,
+                  isSelected: widget.state.selectedOverlayId == item.id,
+                  onDragStart: () {
+                    _isDragging = true;
+                    widget.onDragStart();
+                    setState(() {});
+                  },
+                  onDragEnd: () {
+                    _isDragging = false;
+                    widget.onDragEnd();
+                    setState(() {});
+                  },
+                  onTap: () =>
+                      setState(() => widget.state.selectedOverlayId = item.id),
+                  onDelete: () => setState(() {
+                    widget.state.overlays.remove(item);
+                    widget.state.selectedOverlayId = null;
+                  }),
+                  onUpdate: (updated) => setState(() {}),
+                ),
               ),
             ],
           ),
@@ -730,370 +1084,18 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
           scaleX: widget.state.flipX ? -1 : 1,
           child: Transform.rotate(
             angle: _rotationAnimation.value + widget.state.fineRotation,
-            child: Image.file(
-              widget.file,
-              width: w,
-              height: h,
-              fit: BoxFit.fill,
+            child: ColorFiltered(
+              colorFilter: widget.state.activeFilter.colorFilter,
+              child: Image.file(
+                widget.file,
+                width: w,
+                height: h,
+                fit: BoxFit.fill,
+              ),
             ),
           ),
         );
       },
     );
   }
-}
-
-class _CropBox extends StatelessWidget {
-  final Widget image;
-  final _EditorState state;
-  final Size availableSize;
-  final bool showGrid;
-  final Function(Rect) onChanged;
-  final VoidCallback onDragStart;
-  final VoidCallback onDragEnd;
-
-  const _CropBox({
-    required this.image,
-    required this.state,
-    required this.availableSize,
-    required this.showGrid,
-    required this.onChanged,
-    required this.onDragStart,
-    required this.onDragEnd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final rect = state.cropRect;
-
-    return Positioned(
-      left: rect.left,
-      top: rect.top,
-      width: rect.width,
-      height: rect.height,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // The visible part of the image
-          Positioned.fill(
-            child: ClipRect(
-              child: OverflowBox(
-                alignment: Alignment.center,
-                minWidth: availableSize.width,
-                maxWidth: availableSize.width,
-                minHeight: availableSize.height,
-                maxHeight: availableSize.height,
-                child: Transform.translate(
-                  offset: Offset(
-                    (availableSize.width / 2) - (rect.left + rect.width / 2),
-                    (availableSize.height / 2) - (rect.top + rect.height / 2),
-                  ),
-                  child: image,
-                ),
-              ),
-            ),
-          ),
-          // Grid
-          if (showGrid)
-            Positioned.fill(
-              child: IgnorePointer(child: CustomPaint(painter: _GridPainter())),
-            ),
-          // Border
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-            ),
-          ),
-          // Draggable central area
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => onDragStart(),
-              onPanEnd: (_) => onDragEnd(),
-              onPanUpdate: (details) {
-                double newLeft = rect.left + details.delta.dx;
-                double newTop = rect.top + details.delta.dy;
-
-                newLeft = newLeft.clamp(0, availableSize.width - rect.width);
-                newTop = newTop.clamp(0, availableSize.height - rect.height);
-
-                onChanged(
-                  Rect.fromLTWH(newLeft, newTop, rect.width, rect.height),
-                );
-              },
-            ),
-          ),
-          // Handles
-          ..._buildHandles(),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildHandles() {
-    return [
-      _handle(Alignment.topLeft, (d) => _resize(d, top: true, left: true)),
-      _handle(Alignment.topRight, (d) => _resize(d, top: true, right: true)),
-      _handle(
-        Alignment.bottomLeft,
-        (d) => _resize(d, bottom: true, left: true),
-      ),
-      _handle(
-        Alignment.bottomRight,
-        (d) => _resize(d, bottom: true, right: true),
-      ),
-      _handle(Alignment.topCenter, (d) => _resize(d, top: true)),
-      _handle(Alignment.bottomCenter, (d) => _resize(d, bottom: true)),
-      _handle(Alignment.centerLeft, (d) => _resize(d, left: true)),
-      _handle(Alignment.centerRight, (d) => _resize(d, right: true)),
-    ];
-  }
-
-  Widget _handle(Alignment alignment, Function(DragUpdateDetails) onUpdate) {
-    return Positioned.fill(
-      child: Align(
-        alignment: alignment,
-        child: GestureDetector(
-          onPanStart: (_) => onDragStart(),
-          onPanEnd: (_) => onDragEnd(),
-          onPanUpdate: onUpdate,
-          child: Container(
-            width: 25,
-            height: 25,
-            color: Colors.transparent,
-            child: Center(
-              child: Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _resize(
-    DragUpdateDetails details, {
-    bool top = false,
-    bool bottom = false,
-    bool left = false,
-    bool right = false,
-  }) {
-    Rect rect = state.cropRect;
-    double? ratio = state.aspectRatio;
-
-    double dx = details.delta.dx;
-    double dy = details.delta.dy;
-
-    double newLeft = rect.left;
-    double newTop = rect.top;
-    double newWidth = rect.width;
-    double newHeight = rect.height;
-
-    if (left) {
-      newLeft += dx;
-      newWidth -= dx;
-    } else if (right) {
-      newWidth += dx;
-    }
-
-    if (top) {
-      newTop += dy;
-      newHeight -= dy;
-    } else if (bottom) {
-      newHeight += dy;
-    }
-
-    // Min size
-    const minSize = 40.0;
-    if (newWidth < minSize) {
-      newWidth = minSize;
-      if (left) newLeft = rect.right - minSize;
-    }
-    if (newHeight < minSize) {
-      newHeight = minSize;
-      if (top) newTop = rect.bottom - minSize;
-    }
-
-    // Aspect ratio enforcement
-    if (ratio != null) {
-      if (left || right) {
-        newHeight = newWidth / ratio;
-      } else {
-        newWidth = newHeight * ratio;
-      }
-
-      // Re-adjust top/left if they were changed
-      if (top) newTop = rect.bottom - newHeight;
-      if (left) newLeft = rect.right - newWidth;
-    }
-
-    // Boundary clamp
-    if (newLeft < 0) {
-      if (ratio != null) {
-        newWidth = rect.right;
-        newHeight = newWidth / ratio;
-        if (top) newTop = rect.bottom - newHeight;
-      } else {
-        newWidth = rect.right;
-      }
-      newLeft = 0;
-    }
-    if (newTop < 0) {
-      if (ratio != null) {
-        newHeight = rect.bottom;
-        newWidth = newHeight * ratio;
-        if (left) newLeft = rect.right - newWidth;
-      } else {
-        newHeight = rect.bottom;
-      }
-      newTop = 0;
-    }
-    if (newLeft + newWidth > availableSize.width) {
-      newWidth = availableSize.width - newLeft;
-      if (ratio != null) newHeight = newWidth / ratio;
-    }
-    if (newTop + newHeight > availableSize.height) {
-      newHeight = availableSize.height - newTop;
-      if (ratio != null) newWidth = newHeight * ratio;
-    }
-
-    onChanged(Rect.fromLTWH(newLeft, newTop, newWidth, newHeight));
-  }
-}
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.5)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5;
-
-    for (int i = 1; i < 3; i++) {
-      canvas.drawLine(
-        Offset(size.width * i / 3, 0),
-        Offset(size.width * i / 3, size.height),
-        paint,
-      );
-      canvas.drawLine(
-        Offset(0, size.height * i / 3),
-        Offset(size.width, size.height * i / 3),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _RotationDial extends StatefulWidget {
-  final double value;
-  final ValueChanged<double> onChanged;
-
-  const _RotationDial({required this.value, required this.onChanged});
-
-  @override
-  State<_RotationDial> createState() => _RotationDialState();
-}
-
-class _RotationDialState extends State<_RotationDial> {
-  double _dragOffset = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _dragOffset = widget.value * 200; // Scale for dragging
-  }
-
-  @override
-  void didUpdateWidget(covariant _RotationDial oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!_isDragging) {
-      _dragOffset = widget.value * 200;
-    }
-  }
-
-  bool _isDragging = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanStart: (_) => _isDragging = true,
-      onPanEnd: (_) {
-        _isDragging = false;
-        widget.onChanged(_dragOffset / 200);
-      },
-      onPanUpdate: (details) {
-        setState(() {
-          _dragOffset -= details.delta.dx;
-          _dragOffset = _dragOffset.clamp(
-            -math.pi / 4 * 200,
-            math.pi / 4 * 200,
-          );
-          widget.onChanged(_dragOffset / 200);
-        });
-      },
-      child: CustomPaint(
-        size: const Size(double.infinity, 60),
-        painter: _RotationDialPainter(offset: _dragOffset),
-      ),
-    );
-  }
-}
-
-class _RotationDialPainter extends CustomPainter {
-  final double offset;
-  _RotationDialPainter({required this.offset});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white24
-      ..strokeWidth = 1.0;
-
-    final center = size.width / 2;
-    const spacing = 10.0;
-
-    for (double i = -1000; i <= 1000; i += spacing) {
-      final x = center + (i - offset);
-      if (x < 0 || x > size.width) continue;
-
-      double height = 10;
-      if ((i / spacing).round() % 5 == 0) {
-        height = 20;
-        paint.color = Colors.white54;
-      } else {
-        paint.color = Colors.white24;
-      }
-
-      canvas.drawLine(
-        Offset(x, size.height / 2 - height / 2),
-        Offset(x, size.height / 2 + height / 2),
-        paint,
-      );
-    }
-
-    // Indicator
-    paint.color = const Color(0xFFFF5722);
-    paint.strokeWidth = 2.0;
-    canvas.drawLine(
-      Offset(center, size.height / 2 - 25),
-      Offset(center, size.height / 2 + 25),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RotationDialPainter oldDelegate) =>
-      oldDelegate.offset != offset;
 }

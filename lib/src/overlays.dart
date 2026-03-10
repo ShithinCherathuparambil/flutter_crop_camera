@@ -75,6 +75,8 @@ class StickerOverlay extends OverlayItem {
 class DraggableOverlay extends StatefulWidget {
   final OverlayItem item;
   final VoidCallback onDelete;
+  final VoidCallback onDragStart;
+  final VoidCallback onDragEnd;
   final Function(OverlayItem) onUpdate;
   final bool isSelected;
   final VoidCallback onTap;
@@ -84,79 +86,87 @@ class DraggableOverlay extends StatefulWidget {
     required this.item,
     required this.onDelete,
     required this.onUpdate,
+    required this.onDragStart,
+    required this.onDragEnd,
     this.isSelected = false,
     required this.onTap,
   });
 
   @override
-  DraggableOverlayState createState() => DraggableOverlayState();
+  State<DraggableOverlay> createState() => _DraggableOverlayState();
 }
 
-class DraggableOverlayState extends State<DraggableOverlay> {
-  late OverlayItem _item;
+class _DraggableOverlayState extends State<DraggableOverlay> {
   double _initialScale = 1.0;
   double _initialRotation = 0.0;
 
   @override
-  void initState() {
-    super.initState();
-    _item = widget.item;
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+
     return Positioned(
-      left: _item.position.dx,
-      top: _item.position.dy,
-      child: GestureDetector(
-        onTap: widget.onTap,
-        onScaleStart: (details) {
-          widget.onTap();
-          _initialScale = _item.scale;
-          _initialRotation = _item.rotation;
-        },
-        onScaleUpdate: (details) {
-          setState(() {
-            // Move: focalPointDelta gives the movement since previous update
-            _item.position += details.focalPointDelta;
-
-            // Scale: details.scale is relative to the start of the gesture (1.0)
-            _item.scale = (_initialScale * details.scale).clamp(0.5, 5.0);
-
-            // Rotate: details.rotation is relative to the start of the gesture (0.0)
-            _item.rotation = _initialRotation + details.rotation;
-          });
-          widget.onUpdate(_item);
-        },
-        child: Transform(
-          transform: Matrix4.identity()
-            ..scale(_item.scale)
-            ..rotateZ(_item.rotation),
-          alignment: Alignment.center,
-          child: Container(
-            decoration: widget.isSelected
-                ? BoxDecoration(
-                    border: Border.all(
-                      color: Colors.cyanAccent,
-                      width: 2 / _item.scale,
-                    ),
-                    borderRadius: BorderRadius.circular(4),
-                  )
-                : null,
-            padding: const EdgeInsets.all(8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+      left: item.position.dx,
+      top: item.position.dy,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -0.5),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          onScaleStart: (details) {
+            widget.onTap();
+            widget.onDragStart();
+            _initialScale = item.scale;
+            _initialRotation = item.rotation;
+          },
+          onScaleUpdate: (details) {
+            item.position += details.focalPointDelta;
+            item.scale = (_initialScale * details.scale).clamp(0.5, 5.0);
+            item.rotation = _initialRotation + details.rotation;
+            widget.onUpdate(item);
+          },
+          onScaleEnd: (details) {
+            widget.onDragEnd();
+          },
+          child: Transform(
+            transform: Matrix4.diagonal3Values(item.scale, item.scale, 1.0)
+              ..rotateZ(item.rotation),
+            alignment: Alignment.center,
+            child: Stack(
+              clipBehavior: Clip.none,
               children: [
+                Container(
+                  decoration: widget.isSelected
+                      ? BoxDecoration(
+                          border: Border.all(
+                            color: const Color(0xFFFF5722),
+                            width: 2 / item.scale,
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                        )
+                      : null,
+                  padding: const EdgeInsets.all(8),
+                  child: item.buildWidget(),
+                ),
                 if (widget.isSelected)
-                  GestureDetector(
-                    onTap: widget.onDelete,
-                    child: Icon(
-                      Icons.cancel,
-                      color: Colors.redAccent,
-                      size: 20 / _item.scale,
+                  Positioned(
+                    top: -12 / item.scale,
+                    right: -12 / item.scale,
+                    child: GestureDetector(
+                      onTap: widget.onDelete,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.cancel,
+                          color: Colors.redAccent,
+                          size: 20 / item.scale,
+                        ),
+                      ),
                     ),
                   ),
-                _item.buildWidget(),
               ],
             ),
           ),
