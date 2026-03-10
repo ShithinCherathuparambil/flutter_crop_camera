@@ -233,8 +233,14 @@ class CropBox extends StatelessWidget {
                 double newLeft = rect.left + details.delta.dx;
                 double newTop = rect.top + details.delta.dy;
 
-                newLeft = newLeft.clamp(0, availableSize.width - rect.width);
-                newTop = newTop.clamp(0, availableSize.height - rect.height);
+                newLeft = newLeft.clamp(
+                  0,
+                  math.max(0.0, availableSize.width - rect.width),
+                );
+                newTop = newTop.clamp(
+                  0,
+                  math.max(0.0, availableSize.height - rect.height),
+                );
 
                 onChanged(
                   Rect.fromLTWH(newLeft, newTop, rect.width, rect.height),

@@ -41,13 +41,6 @@ class TextOverlay extends OverlayItem {
         color: color,
         fontSize: fontSize,
         fontWeight: FontWeight.bold,
-        shadows: [
-          Shadow(
-            offset: const Offset(1, 1),
-            blurRadius: 2,
-            color: Colors.black.withValues(alpha: 0.5),
-          ),
-        ],
       ),
     );
   }
@@ -147,7 +140,8 @@ class _DraggableOverlayState extends State<DraggableOverlay> {
                   padding: const EdgeInsets.all(8),
                   child: item.buildWidget(),
                 ),
-                if (widget.isSelected)
+                if (widget.isSelected) ...[
+                  // Delete Button
                   Positioned(
                     top: -12 / item.scale,
                     right: -12 / item.scale,
@@ -167,6 +161,47 @@ class _DraggableOverlayState extends State<DraggableOverlay> {
                       ),
                     ),
                   ),
+                  // Resize Handle
+                  Positioned(
+                    bottom: -12 / item.scale,
+                    right: -12 / item.scale,
+                    child: GestureDetector(
+                      onPanStart: (details) {
+                        _initialScale = item.scale;
+                      },
+                      onPanUpdate: (details) {
+                        setState(() {
+                          // More intuitive distance-based scaling from center
+                          // Since we are in a stack/transform, global vs local can be tricky
+                          // but the delta is relative and reliable.
+                          // Let's use a simpler but more robust accumulated delta approach
+                          final double delta =
+                              details.delta.dx + details.delta.dy;
+                          item.scale = (item.scale + delta * 0.01).clamp(
+                            0.5,
+                            8.0,
+                          );
+                          widget.onUpdate(item);
+                        });
+                      },
+                      onPanEnd: (details) {
+                        widget.onDragEnd();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.open_in_full,
+                          color: const Color(0xFFFF5722),
+                          size: 18 / item.scale,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

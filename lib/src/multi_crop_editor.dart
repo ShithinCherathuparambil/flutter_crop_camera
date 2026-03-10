@@ -74,6 +74,20 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     });
   }
 
+  void _reset() {
+    setState(() {
+      final state = _states[_currentIndex];
+      state.reset();
+      // Recalculate crop rect for the initial state
+      state.cropRect = Rect.fromLTWH(
+        0,
+        0,
+        state.baseSize.width,
+        state.baseSize.height,
+      );
+    });
+  }
+
   void _onDone() async {
     showDialog(
       context: context,
@@ -163,6 +177,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         }
 
         canvasFull.drawImage(image, Offset.zero, paint);
+        canvasFull.restore();
 
         // 3. Draw Overlays
         final double overlayScale = realImgW / base.width;
@@ -174,7 +189,6 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
           }
         }
 
-        canvasFull.restore();
         final pictureFull = recorderFull.endRecording();
         canvas.drawPicture(pictureFull);
 
@@ -239,16 +253,9 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  TextButton(
-                    onPressed: _onDone,
-                    child: const Text(
-                      "DONE",
-                      style: TextStyle(
-                        color: Color(0xFFFF5722),
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.0,
-                      ),
-                    ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh, color: Colors.white54),
+                    onPressed: _reset,
                   ),
                 ],
               ),
@@ -387,19 +394,28 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                         Icons.crop,
                         "Crop",
                         _mode == EditorMode.ratio,
-                        () => setState(() => _mode = EditorMode.ratio),
+                        () => setState(() {
+                          _mode = EditorMode.ratio;
+                          _states[_currentIndex].selectedOverlayId = null;
+                        }),
                       ),
                       _buildTabItem(
                         Icons.rotate_90_degrees_ccw_outlined,
                         "Rotate",
                         _mode == EditorMode.rotate,
-                        () => setState(() => _mode = EditorMode.rotate),
+                        () => setState(() {
+                          _mode = EditorMode.rotate;
+                          _states[_currentIndex].selectedOverlayId = null;
+                        }),
                       ),
                       _buildTabItem(
                         Icons.filter_vintage_outlined,
                         "Filter",
                         _mode == EditorMode.filter,
-                        () => setState(() => _mode = EditorMode.filter),
+                        () => setState(() {
+                          _mode = EditorMode.filter;
+                          _states[_currentIndex].selectedOverlayId = null;
+                        }),
                       ),
                       _buildTabItem(
                         Icons.text_fields,
@@ -439,6 +455,13 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                         false,
                         _deleteCurrentImage,
                         color: Colors.redAccent.withValues(alpha: 0.8),
+                      ),
+                      _buildTabItem(
+                        Icons.check_circle_outline,
+                        "Save",
+                        false,
+                        _onDone,
+                        color: const Color(0xFFFF5722),
                       ),
                     ],
                   ),
@@ -735,13 +758,6 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
           color: item.color,
           fontSize: item.fontSize,
           fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              offset: Offset(scaleFactor, scaleFactor),
-              blurRadius: 4 * scaleFactor,
-              color: Colors.black.withValues(alpha: 0.5),
-            ),
-          ],
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -769,7 +785,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
-        style: TextStyle(fontSize: item.fontSize, color: Colors.white),
+        style: TextStyle(fontSize: item.fontSize),
       ),
       textDirection: TextDirection.ltr,
     );

@@ -418,6 +418,28 @@ class _CropEditorState extends State<CropEditor> {
                 _addSticker,
               ),
               _buildTabItem(
+                _state.showGrid ? Icons.grid_on : Icons.grid_off,
+                "Grid",
+                false,
+                () => setState(() => _state.showGrid = !_state.showGrid),
+              ),
+              _buildTabItem(Icons.flip, "Flip", false, () {
+                setState(() {
+                  _state.flipX = !_state.flipX;
+                  _state.hasChanges = true;
+                });
+              }),
+              _buildTabItem(
+                Icons.delete_outline,
+                "Delete",
+                false,
+                () {
+                  // Simply pop if it's the single editor, or call a specific reset if needed
+                  Navigator.pop(context);
+                },
+                color: Colors.redAccent.withValues(alpha: 0.8),
+              ),
+              _buildTabItem(
                 Icons.check_circle_outline,
                 "Save",
                 false,
@@ -873,13 +895,6 @@ class _CropEditorState extends State<CropEditor> {
           color: item.color,
           fontSize: item.fontSize,
           fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              offset: Offset(scaleFactor, scaleFactor),
-              blurRadius: 4 * scaleFactor,
-              color: Colors.black.withValues(alpha: 0.5),
-            ),
-          ],
         ),
       ),
       textDirection: TextDirection.ltr,
@@ -907,7 +922,7 @@ class _CropEditorState extends State<CropEditor> {
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
-        style: TextStyle(fontSize: item.fontSize, color: Colors.white),
+        style: TextStyle(fontSize: item.fontSize),
       ),
       textDirection: TextDirection.ltr,
     );

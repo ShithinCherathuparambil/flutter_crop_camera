@@ -1,3 +1,12 @@
+## 0.2.0
+* **Major Feature**: Achieved full feature parity between Single Image and Multi-Image cropping editors.
+* **New UI**: Separated Aspect Ratio cropping and Rotation controls into dedicated, intuitive tabs (`Crop` and `Rotate`).
+* **Overlays**: Added Draggable, Scalable, and Rotatable **Text** and **Sticker (Emoji)** overlays to both editors.
+* **Filters**: Integrated multiple professional Instagram-style photo color filters (Grayscale, Sepia, Pop, Vintage, Cool, etc.).
+* **Baking Pipeline**: Implemented a standalone Flutter `Canvas`-based image baking pipeline to successfully merge filters, custom overlays, and rotation adjustments directly into the final output image natively.
+* **Optimizations**: Added UI image downsampling for high-resolution images to prevent memory exhaustion and `PageView` gesture improvements.
+* **Testing**: Added comprehensive automated Widget and Unit testing coverage.
+
 ## 0.1.1
 * Fixed README.md image paths for pub.dev display.
 
