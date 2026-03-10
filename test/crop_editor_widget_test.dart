@@ -37,7 +37,7 @@ void main() {
     return MaterialApp(
       home: CropEditor(
         file: testFile,
-        onCrop: (x, y, w, h, roll, flip) {},
+        onImageSaved: (file) {},
         showGrid: showGrid,
         lockAspectRatio: lockAspectRatio,
         screenOrientations: const [], // Empty or any list for test

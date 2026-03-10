@@ -319,22 +319,8 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                   showGrid: widget.showGrid,
                   lockAspectRatio: widget.lockAspectRatio,
                   screenOrientations: widget.screenOrientations,
-                  onCrop: (x, y, width, height, rotation, flipX) async {
-                    final croppedPath = await _controller.cropImage(
-                      path: file.path,
-                      x: x,
-                      y: y,
-                      width: width,
-                      height: height,
-                      rotationDegrees: rotation,
-                      flipX: flipX,
-                      quality: (widget.quality * 100).toInt(),
-                    );
-                    if (croppedPath != null) {
-                      if (!context.mounted) return;
-                      // Return the result to the awaiter (Loader)
-                      Navigator.pop(context, File(croppedPath));
-                    }
+                  onImageSaved: (file) {
+                    Navigator.pop(context, file);
                   },
                 ),
               ),
@@ -436,23 +422,8 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                 lockAspectRatio: widget.lockAspectRatio,
                 screenOrientations: widget.screenOrientations,
                 // Callback triggered when user confirms their crop.
-                onCrop: (x, y, width, height, rotation, flipX) async {
-                  // Perform the actual bitmap transformation on the native side.
-                  final croppedPath = await _controller.cropImage(
-                    path: file.path,
-                    x: x,
-                    y: y,
-                    width: width,
-                    height: height,
-                    rotationDegrees: rotation,
-                    flipX: flipX,
-                    quality: (widget.quality * 100).toInt(),
-                  );
-                  if (croppedPath != null) {
-                    if (!context.mounted) return;
-                    // Return the result to the awaiter (_capture)
-                    Navigator.pop(context, File(croppedPath));
-                  }
+                onImageSaved: (file) {
+                  Navigator.pop(context, file);
                 },
               ),
             ),
