@@ -373,9 +373,23 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                   showGrid: widget.showGrid,
                   lockAspectRatio: widget.lockAspectRatio,
                   screenOrientations: widget.screenOrientations,
+                  quality: (widget.quality * 100).toInt(),
                   onImageSaved: (file) {
                     Navigator.pop(context, file);
                   },
+                  cropNative:
+                      (path, x, y, width, height, rotation, flipX) async {
+                        return await _controller.cropImage(
+                          path: path,
+                          x: x,
+                          y: y,
+                          width: width,
+                          height: height,
+                          rotationDegrees: rotation,
+                          flipX: flipX,
+                          quality: (widget.quality * 100).toInt(),
+                        );
+                      },
                 ),
               ),
             );
@@ -475,9 +489,21 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                 showGrid: widget.showGrid,
                 lockAspectRatio: widget.lockAspectRatio,
                 screenOrientations: widget.screenOrientations,
-                // Callback triggered when user confirms their crop.
+                quality: (widget.quality * 100).toInt(),
                 onImageSaved: (file) {
                   Navigator.pop(context, file);
+                },
+                cropNative: (path, x, y, width, height, rotation, flipX) async {
+                  return await _controller.cropImage(
+                    path: path,
+                    x: x,
+                    y: y,
+                    width: width,
+                    height: height,
+                    rotationDegrees: rotation,
+                    flipX: flipX,
+                    quality: (widget.quality * 100).toInt(),
+                  );
                 },
               ),
             ),

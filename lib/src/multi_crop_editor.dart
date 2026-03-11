@@ -89,140 +89,133 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   }
 
   void _onDone() async {
+    setState(() => _currentIndex = 0); // Reset or show global loader
+
+    // Show a global loading dialog if many images
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (c) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFFFF5722)),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    List<File> resultFiles = [];
+    try {
+      final List<Future<File>> processingFutures = [];
 
-    for (int i = 0; i < widget.files.length; i++) {
-      final state = _states[i];
-      final file = widget.files[i];
-
-      if (!state.hasChanges) {
-        resultFiles.add(file);
-        continue;
+      for (int i = 0; i < widget.files.length; i++) {
+        processingFutures.add(_processImage(i));
       }
 
-      try {
-        final data = await file.readAsBytes();
-        final ui.Image image = await decodeImageFromList(data);
+      final List<File> processedFiles = await Future.wait(processingFutures);
 
-        final rect = state.cropRect;
-        final base = state.baseSize;
-
-        if (rect == Rect.zero || base == Size.zero) {
-          resultFiles.add(file);
-          image.dispose();
-          continue;
-        }
-
-        final bool isRotated = state.rotation % 2 != 0;
-        final double realImgW = isRotated
-            ? image.height.toDouble()
-            : image.width.toDouble();
-        final double realImgH = isRotated
-            ? image.width.toDouble()
-            : image.height.toDouble();
-
-        final double scaleX = realImgW / base.width;
-        final double scaleY = realImgH / base.height;
-
-        final int cropX = (rect.left * scaleX).round();
-        final int cropY = (rect.top * scaleY).round();
-        final int cropWidth = (rect.width * scaleX).round();
-        final int cropHeight = (rect.height * scaleY).round();
-
-        // 1. Setup Recording Pipeline
-        final ui.PictureRecorder recorder = ui.PictureRecorder();
-        final Canvas canvas = Canvas(recorder);
-
-        if (cropWidth <= 0 || cropHeight <= 0) {
-          throw Exception("Invalid crop dimensions");
-        }
-
-        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
-
-        // 2. Draw Full Image with transformations
-        final recorderFull = ui.PictureRecorder();
-        final canvasFull = Canvas(recorderFull);
-        final Paint paint = Paint()
-          ..colorFilter = state.activeFilter.colorFilter;
-
-        canvasFull.save();
-        if (state.rotation == 1) {
-          canvasFull.translate(image.height.toDouble(), 0);
-          canvasFull.rotate(math.pi / 2);
-        } else if (state.rotation == 2) {
-          canvasFull.translate(image.width.toDouble(), image.height.toDouble());
-          canvasFull.rotate(math.pi);
-        } else if (state.rotation == 3) {
-          canvasFull.translate(0, image.width.toDouble());
-          canvasFull.rotate(3 * math.pi / 2);
-        }
-
-        if (state.fineRotation != 0) {
-          canvasFull.translate(realImgW / 2, realImgH / 2);
-          canvasFull.rotate(state.fineRotation);
-          canvasFull.translate(-realImgW / 2, -realImgH / 2);
-        }
-
-        if (state.flipX) {
-          canvasFull.translate(realImgW, 0);
-          canvasFull.scale(-1, 1);
-        }
-
-        canvasFull.drawImage(image, Offset.zero, paint);
-        canvasFull.restore();
-
-        // 3. Draw Overlays
-        final double overlayScale = realImgW / base.width;
-        for (var item in state.overlays) {
-          if (item is TextOverlay) {
-            _drawTextOverlay(canvasFull, item, overlayScale);
-          } else if (item is StickerOverlay) {
-            _drawStickerOverlay(canvasFull, item, overlayScale);
-          }
-        }
-
-        final pictureFull = recorderFull.endRecording();
-        canvas.drawPicture(pictureFull);
-
-        final pictureFinal = recorder.endRecording();
-        final ui.Image imgFinal = await pictureFinal.toImage(
-          cropWidth,
-          cropHeight,
-        );
-        final ByteData? pngBytes = await imgFinal.toByteData(
-          format: ui.ImageByteFormat.png,
-        );
-
-        image.dispose();
-        imgFinal.dispose();
-
-        if (pngBytes != null) {
-          final tempDir = await getTemporaryDirectory();
-          final File savedFile = File(
-            '${tempDir.path}/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png',
-          );
-          await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
-          resultFiles.add(savedFile);
-        } else {
-          resultFiles.add(file);
-        }
-      } catch (e) {
-        debugPrint("Error cropping image $i: $e");
-        resultFiles.add(file);
+      if (mounted) {
+        Navigator.pop(context); // Pop loading dialog
+        widget.onImagesCropped(processedFiles);
+      }
+    } catch (e) {
+      debugPrint("Error in multi-save: $e");
+      if (mounted) {
+        Navigator.pop(context); // Pop loading dialog
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text("Error saving images: $e")));
       }
     }
+  }
 
-    if (mounted) {
-      Navigator.pop(context); // Pop dialog
-      widget.onImagesCropped(resultFiles);
+  Future<File> _processImage(int i) async {
+    final state = _states[i];
+    final file = widget.files[i];
+
+    if (!state.hasChanges) return file;
+
+    try {
+      final rect = state.cropRect;
+      final base = state.baseSize;
+
+      if (rect == Rect.zero || base == Size.zero) return file;
+
+      final data = await file.readAsBytes();
+      final ui.Image image = await decodeImageFromList(data);
+
+      final bool isRotated = state.rotation % 2 != 0;
+      final double realImgW = isRotated
+          ? image.height.toDouble()
+          : image.width.toDouble();
+      final double realImgH = isRotated
+          ? image.width.toDouble()
+          : image.height.toDouble();
+
+      final double scaleX = realImgW / base.width;
+      final double scaleY = realImgH / base.height;
+
+      final int cropX = (rect.left * scaleX).round();
+      final int cropY = (rect.top * scaleY).round();
+      final int cropWidth = (rect.width * scaleX).round();
+      final int cropHeight = (rect.height * scaleY).round();
+
+      // OPTIMIZATION: Use native crop first
+      final String? croppedPath = await widget.cropNative(
+        file.path,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        state.rotation,
+        state.flipX,
+      );
+
+      if (croppedPath == null) throw Exception("Native crop failed for $i");
+
+      // Load cropped result for Filter/Overlays
+      final File croppedFile = File(croppedPath);
+      final Uint8List croppedBytes = await croppedFile.readAsBytes();
+      final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
+
+      final ui.PictureRecorder recorder = ui.PictureRecorder();
+      final Canvas canvas = Canvas(recorder);
+
+      // Apply filter
+      final Paint paint = Paint()..colorFilter = state.activeFilter.colorFilter;
+      canvas.drawImage(croppedImage, Offset.zero, paint);
+
+      // Draw Overlays
+      canvas.save();
+      canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+      final double overlayScale = realImgW / base.width;
+      for (var item in state.overlays) {
+        if (item is TextOverlay) {
+          _drawTextOverlay(canvas, item, overlayScale);
+        } else if (item is StickerOverlay) {
+          _drawStickerOverlay(canvas, item, overlayScale);
+        }
+      }
+      canvas.restore();
+
+      final pictureFinal = recorder.endRecording();
+      final ui.Image imgFinal = await pictureFinal.toImage(
+        cropWidth,
+        cropHeight,
+      );
+
+      final ByteData? pngBytes = await imgFinal.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
+      image.dispose();
+      croppedImage.dispose();
+      imgFinal.dispose();
+
+      if (pngBytes == null) throw Exception("Failed to encode image $i");
+
+      final tempDir = await getTemporaryDirectory();
+      final File savedFile = File(
+        '${tempDir.path}/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
+      return savedFile;
+    } catch (e) {
+      debugPrint("Error processing image $i: $e");
+      return file;
     }
   }
 

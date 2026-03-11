@@ -15,13 +15,27 @@ class CropEditor extends StatefulWidget {
   final bool lockAspectRatio;
   final List<DeviceOrientation> screenOrientations;
 
+  final Function(
+    String path,
+    int x,
+    int y,
+    int width,
+    int height,
+    int rotation,
+    bool flipX,
+  )
+  cropNative;
+  final int quality;
+
   const CropEditor({
     super.key,
     required this.file,
     required this.onImageSaved,
+    required this.cropNative,
     this.showGrid = true,
     this.lockAspectRatio = false,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
+    this.quality = 90,
   });
 
   @override
@@ -789,77 +803,59 @@ class _CropEditorState extends State<CropEditor> {
       final int cropWidth = (rect.width * scaleX).round();
       final int cropHeight = (rect.height * scaleY).round();
 
+      // OPTIMIZATION: Use native crop first to get a smaller image
+      final String? croppedPath = await widget.cropNative(
+        widget.file.path,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+        _state.rotation,
+        _state.flipX,
+      );
+
+      if (croppedPath == null) throw Exception("Native crop failed");
+
+      // Now load the much smaller cropped image for final processing
+      final File croppedFile = File(croppedPath);
+      final Uint8List croppedBytes = await croppedFile.readAsBytes();
+      final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
+
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(recorder);
 
-      if (cropWidth <= 0 || cropHeight <= 0) {
-        throw Exception("Invalid crop dimensions");
-      }
-
-      // 1. Draw transformed image + overlays onto a "full" canvas of the original size
-      final recorderFull = ui.PictureRecorder();
-      final canvasFull = Canvas(recorderFull);
+      // Apply filter to the cropped image
       final Paint paint = Paint()..colorFilter = _activeFilter.colorFilter;
+      canvas.drawImage(croppedImage, Offset.zero, paint);
 
-      final bytes = await widget.file.readAsBytes();
-      final ui.Image fullImage = await decodeImageFromList(bytes);
-
-      canvasFull.save();
-
-      // ROTATION & FLIP
-      if (_state.rotation == 1) {
-        canvasFull.translate(_imgHeight.toDouble(), 0);
-        canvasFull.rotate(math.pi / 2);
-      } else if (_state.rotation == 2) {
-        canvasFull.translate(_imgWidth.toDouble(), _imgHeight.toDouble());
-        canvasFull.rotate(math.pi);
-      } else if (_state.rotation == 3) {
-        canvasFull.translate(0, _imgWidth.toDouble());
-        canvasFull.rotate(3 * math.pi / 2);
-      }
-
-      // FINE ROTATION
-      if (_state.fineRotation != 0) {
-        canvasFull.translate(realImgW / 2, realImgH / 2);
-        canvasFull.rotate(_state.fineRotation);
-        canvasFull.translate(-realImgW / 2, -realImgH / 2);
-      }
-
-      // FLIP
-      if (_state.flipX) {
-        canvasFull.translate(realImgW, 0);
-        canvasFull.scale(-1, 1);
-      }
-
-      // Draw the image with filter
-      canvasFull.drawImage(fullImage, Offset.zero, paint);
-      canvasFull.restore();
-      fullImage.dispose();
-
-      // 2. Draw Overlays on top (untransformed by image rotation/flip but scaled)
+      // Draw Overlays on top
+      // Coordinate space for overlays: they were relative to the baseSize box.
+      // Now the canvas IS the cropWidth x cropHeight box.
+      // We need to shift overlay positions by the crop starting point.
+      canvas.save();
+      canvas.translate(-cropX.toDouble(), -cropY.toDouble());
       final double overlayScale = realImgW / base.width;
       for (var item in _overlays) {
         if (item is TextOverlay) {
-          _drawTextOverlay(canvasFull, item, overlayScale);
+          _drawTextOverlay(canvas, item, overlayScale);
         } else if (item is StickerOverlay) {
-          _drawStickerOverlay(canvasFull, item, overlayScale);
+          _drawStickerOverlay(canvas, item, overlayScale);
         }
       }
-
-      final pictureFull = recorderFull.endRecording();
-
-      // 3. Move the canvas to the crop start and draw the full picture
-      canvas.translate(-cropX.toDouble(), -cropY.toDouble());
-      canvas.drawPicture(pictureFull);
+      canvas.restore();
 
       final pictureFinal = recorder.endRecording();
       final ui.Image imgFinal = await pictureFinal.toImage(
         cropWidth,
         cropHeight,
       );
+
       final ByteData? pngBytes = await imgFinal.toByteData(
         format: ui.ImageByteFormat.png,
       );
+
+      croppedImage.dispose();
+      imgFinal.dispose();
 
       if (pngBytes == null) throw Exception("Failed to encode image");
 

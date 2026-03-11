@@ -38,6 +38,7 @@ void main() {
       home: CropEditor(
         file: testFile,
         onImageSaved: (file) {},
+        cropNative: (path, x, y, width, height, rotation, flipX) async => "",
         showGrid: showGrid,
         lockAspectRatio: lockAspectRatio,
         screenOrientations: const [], // Empty or any list for test
