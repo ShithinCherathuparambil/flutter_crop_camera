@@ -220,8 +220,8 @@ class _CropEditorState extends State<CropEditor> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
-                    onPressed: _reset,
+                    icon: const Icon(Icons.check, color: Color(0xFFFF5722)),
+                    onPressed: _isSaving ? () {} : _saveImage,
                   ),
                 ],
               ),
@@ -432,6 +432,7 @@ class _CropEditorState extends State<CropEditor> {
                     _state.hasChanges = true;
                   });
                 }),
+                _buildTabItem(Icons.refresh, "Reset", false, _reset),
                 _buildTabItem(
                   Icons.delete_outline,
                   "Delete",
@@ -441,13 +442,6 @@ class _CropEditorState extends State<CropEditor> {
                     Navigator.pop(context);
                   },
                   color: Colors.redAccent.withValues(alpha: 0.8),
-                ),
-                _buildTabItem(
-                  Icons.check_circle_outline,
-                  "Save",
-                  false,
-                  _isSaving ? () {} : _saveImage,
-                  color: const Color(0xFFFF5722),
                 ),
               ],
             ),

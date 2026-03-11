@@ -254,8 +254,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh, color: Colors.white54),
-                    onPressed: _reset,
+                    icon: const Icon(Icons.check, color: Color(0xFFFF5722)),
+                    onPressed: _onDone,
                   ),
                 ],
               ),
@@ -451,19 +451,13 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                             _states[_currentIndex].hasChanges = true;
                           });
                         }),
+                        _buildTabItem(Icons.refresh, "Reset", false, _reset),
                         _buildTabItem(
                           Icons.delete_outline,
                           "Delete",
                           false,
                           _deleteCurrentImage,
                           color: Colors.redAccent.withValues(alpha: 0.8),
-                        ),
-                        _buildTabItem(
-                          Icons.check_circle_outline,
-                          "Save",
-                          false,
-                          _onDone,
-                          color: const Color(0xFFFF5722),
                         ),
                       ],
                     ),
