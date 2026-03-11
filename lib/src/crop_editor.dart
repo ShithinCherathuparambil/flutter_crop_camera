@@ -375,78 +375,82 @@ class _CropEditorState extends State<CropEditor> {
             const SizedBox(height: 10),
           ],
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildTabItem(
-                Icons.crop,
-                "Crop",
-                _mode == EditorMode.ratio,
-                () => setState(() {
-                  _mode = EditorMode.ratio;
-                  _selectedOverlayId = null;
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildTabItem(
+                  Icons.crop,
+                  "Crop",
+                  _mode == EditorMode.ratio,
+                  () => setState(() {
+                    _mode = EditorMode.ratio;
+                    _selectedOverlayId = null;
+                  }),
+                ),
+                _buildTabItem(
+                  Icons.rotate_90_degrees_ccw_outlined,
+                  "Rotate",
+                  _mode == EditorMode.rotate,
+                  () => setState(() {
+                    _mode = EditorMode.rotate;
+                    _selectedOverlayId = null;
+                  }),
+                ),
+                _buildTabItem(
+                  Icons.filter_vintage_outlined,
+                  "Filter",
+                  _mode == EditorMode.filter,
+                  () => setState(() {
+                    _mode = EditorMode.filter;
+                    _selectedOverlayId = null;
+                  }),
+                ),
+                _buildTabItem(
+                  Icons.text_fields,
+                  "Text",
+                  _mode == EditorMode.text,
+                  _addText,
+                ),
+                _buildTabItem(
+                  Icons.emoji_emotions_outlined,
+                  "Sticker",
+                  _mode == EditorMode.sticker,
+                  _addSticker,
+                ),
+                _buildTabItem(
+                  _state.showGrid ? Icons.grid_on : Icons.grid_off,
+                  "Grid",
+                  false,
+                  () => setState(() => _state.showGrid = !_state.showGrid),
+                ),
+                _buildTabItem(Icons.flip, "Flip", false, () {
+                  setState(() {
+                    _state.flipX = !_state.flipX;
+                    _state.hasChanges = true;
+                  });
                 }),
-              ),
-              _buildTabItem(
-                Icons.rotate_90_degrees_ccw_outlined,
-                "Rotate",
-                _mode == EditorMode.rotate,
-                () => setState(() {
-                  _mode = EditorMode.rotate;
-                  _selectedOverlayId = null;
-                }),
-              ),
-              _buildTabItem(
-                Icons.filter_vintage_outlined,
-                "Filter",
-                _mode == EditorMode.filter,
-                () => setState(() {
-                  _mode = EditorMode.filter;
-                  _selectedOverlayId = null;
-                }),
-              ),
-              _buildTabItem(
-                Icons.text_fields,
-                "Text",
-                _mode == EditorMode.text,
-                _addText,
-              ),
-              _buildTabItem(
-                Icons.emoji_emotions_outlined,
-                "Sticker",
-                _mode == EditorMode.sticker,
-                _addSticker,
-              ),
-              _buildTabItem(
-                _state.showGrid ? Icons.grid_on : Icons.grid_off,
-                "Grid",
-                false,
-                () => setState(() => _state.showGrid = !_state.showGrid),
-              ),
-              _buildTabItem(Icons.flip, "Flip", false, () {
-                setState(() {
-                  _state.flipX = !_state.flipX;
-                  _state.hasChanges = true;
-                });
-              }),
-              _buildTabItem(
-                Icons.delete_outline,
-                "Delete",
-                false,
-                () {
-                  // Simply pop if it's the single editor, or call a specific reset if needed
-                  Navigator.pop(context);
-                },
-                color: Colors.redAccent.withValues(alpha: 0.8),
-              ),
-              _buildTabItem(
-                Icons.check_circle_outline,
-                "Save",
-                false,
-                _isSaving ? () {} : _saveImage,
-                color: const Color(0xFFFF5722),
-              ),
-            ],
+                _buildTabItem(
+                  Icons.delete_outline,
+                  "Delete",
+                  false,
+                  () {
+                    // Simply pop if it's the single editor, or call a specific reset if needed
+                    Navigator.pop(context);
+                  },
+                  color: Colors.redAccent.withValues(alpha: 0.8),
+                ),
+                _buildTabItem(
+                  Icons.check_circle_outline,
+                  "Save",
+                  false,
+                  _isSaving ? () {} : _saveImage,
+                  color: const Color(0xFFFF5722),
+                ),
+              ],
+            ),
           ),
         ],
       ),
