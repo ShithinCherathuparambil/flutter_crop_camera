@@ -127,14 +127,26 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         if front {
             return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
         } else {
-            // Prefer Triple > DualWide > Wide
-            if let device = AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back) {
-                return device
-            } else if let device = AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back) {
-                return device
-            } else {
-                return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-            }
+            // Priority:
+            // 1. Triple Camera (Ultra Wide + Wide + Telephoto)
+            // 2. Dual Camera (Wide + Telephoto) - Common on XS, 11 Pro, 12 Pro etc.
+            // 3. Dual Wide Camera (Ultra Wide + Wide) - Common on 11, 12, 13 etc.
+            // 4. Standard Wide Camera
+            
+            let deviceTypes: [AVCaptureDevice.DeviceType] = [
+                .builtInTripleCamera,
+                .builtInDualCamera,
+                .builtInDualWideCamera,
+                .builtInWideAngleCamera
+            ]
+            
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: deviceTypes,
+                mediaType: .video,
+                position: .back
+            )
+            
+            return discoverySession.devices.first ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
         }
     }
     

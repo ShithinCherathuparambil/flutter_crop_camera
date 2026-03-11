@@ -569,17 +569,24 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                       onHorizontalDragUpdate: (details) {
                         _startZoomSliderTimer();
                         double newZoom =
-                            _currentZoom - details.delta.dx / 120.0;
+                            _currentZoom - (details.delta.dx / 120.0);
                         newZoom = newZoom.clamp(_minZoom, _maxZoom);
-                        if (_currentZoom.truncate() != newZoom.truncate()) {
-                          HapticFeedback.selectionClick();
+
+                        if (newZoom != _currentZoom) {
+                          if (_currentZoom.truncate() != newZoom.truncate()) {
+                            HapticFeedback.selectionClick();
+                          }
+                          setState(() {
+                            _currentZoom = newZoom;
+                          });
+                          // Attempt to set zoom, catch errors silently but log for debug
+                          _controller.setZoom(_currentZoom).catchError((e) {
+                            debugPrint("Zoom Error: $e");
+                          });
                         }
-                        setState(() {
-                          _currentZoom = newZoom;
-                        });
-                        _controller.setZoom(_currentZoom);
                       },
                       child: Container(
+                        key: const Key('zoom_container'),
                         margin: const EdgeInsets.only(bottom: 20),
                         height: _showZoomSlider ? 80 : 40,
                         child: AnimatedSwitcher(
