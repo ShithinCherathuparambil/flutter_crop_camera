@@ -108,6 +108,14 @@ class FlutterCropCameraPlugin :
                     result.error("INVALID_ARGS", "Missing mode argument", null)
                 }
             }
+            "getMaxZoom" -> {
+                val zoomState = camera?.cameraInfo?.zoomState?.value
+                if (zoomState != null) {
+                    result.success(zoomState.maxZoomRatio.toDouble())
+                } else {
+                    result.success(1.0)
+                }
+            }
             else -> result.notImplemented()
         }
     }

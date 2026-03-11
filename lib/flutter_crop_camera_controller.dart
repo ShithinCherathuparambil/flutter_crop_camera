@@ -60,6 +60,12 @@ class FlutterCropCameraController {
     await _channel.invokeMethod('setFlashMode', {'mode': mode});
   }
 
+  /// Gets the maximum native zoom supported by the current camera.
+  Future<double> getMaxZoom() async {
+    final double? max = await _channel.invokeMethod('getMaxZoom');
+    return max ?? 1.0;
+  }
+
   /// Captures a static image and saves it to the temporary directory.
   /// Returns the file path of the captured image.
   Future<String?> takePicture() async {

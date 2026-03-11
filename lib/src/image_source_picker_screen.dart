@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -175,6 +176,17 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
   /// Current shooting mode. Standard photo mode is "PHOTO".
   String _selectedMode = "PHOTO";
 
+  /// Zoom slider visibility
+  bool _showZoomSlider = false;
+  Timer? _zoomSliderTimer;
+
+  /// Pinch-to-zoom base scale
+  double _baseZoomScale = 1.0;
+
+  /// Zoom limits
+  double _maxZoom = 8.0;
+  final double _minZoom = 1.0;
+
   @override
   void initState() {
     super.initState();
@@ -214,11 +226,16 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
         cameraPreference: widget.initialCamera,
         aspectRatio: widget.aspectRatio,
       );
+      final double nativeMaxZoom = await _controller.getMaxZoom();
+
       // Restore the user's selected flash mode after (re)initialization.
       await _controller.setFlashMode(_flashMode);
       if (mounted) {
         setState(() {
           _isInit = true;
+          // If native camera reports 1.0 (e.g. iOS simulator),
+          // fallback to 8.0 so UI can still be rendered and tested.
+          _maxZoom = nativeMaxZoom > 1.0 ? nativeMaxZoom : 8.0;
         });
       }
     } catch (e) {
@@ -275,6 +292,41 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
     }
   }
 
+  void _startZoomSliderTimer() {
+    setState(() {
+      _showZoomSlider = true;
+    });
+    _zoomSliderTimer?.cancel();
+    _zoomSliderTimer = Timer(const Duration(milliseconds: 2500), () {
+      if (mounted) {
+        setState(() {
+          _showZoomSlider = false;
+        });
+      }
+    });
+  }
+
+  void _handleScaleStart(ScaleStartDetails details) {
+    _baseZoomScale = _currentZoom;
+    _startZoomSliderTimer();
+  }
+
+  void _handleScaleUpdate(ScaleUpdateDetails details) {
+    double newZoom = (_baseZoomScale * details.scale).clamp(_minZoom, _maxZoom);
+
+    if (_currentZoom.truncate() != newZoom.truncate() && details.scale != 1.0) {
+      HapticFeedback.selectionClick();
+    }
+
+    if (newZoom != _currentZoom) {
+      setState(() {
+        _currentZoom = newZoom;
+      });
+      _startZoomSliderTimer();
+      _controller.setZoom(_currentZoom);
+    }
+  }
+
   /// Maps [CamRatio] enum to numerical double values for [AspectRatio] widget.
   double _getAspectRatio(CamRatio ratio) {
     switch (ratio) {
@@ -293,6 +345,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
 
   @override
   void dispose() {
+    _zoomSliderTimer?.cancel();
     // Ensure native camera resources are released when widget is destroyed.
     _controller.stopCamera();
     // Reset orientation settings to allow all orientations for the rest of the app.
@@ -455,7 +508,11 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
           Center(
             child: AspectRatio(
               aspectRatio: _getAspectRatio(widget.aspectRatio),
-              child: CameraPreview(controller: _controller),
+              child: GestureDetector(
+                onScaleStart: _handleScaleStart,
+                onScaleUpdate: _handleScaleUpdate,
+                child: CameraPreview(controller: _controller),
+              ),
             ),
           ),
 
@@ -505,48 +562,108 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Zoom Pill
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 20),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
+                  // Zoom Container (Pill or Dynamic Slider)
+                  if (_maxZoom > 1.0)
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) {
+                        _startZoomSliderTimer();
+                        double newZoom =
+                            _currentZoom - details.delta.dx / 120.0;
+                        newZoom = newZoom.clamp(_minZoom, _maxZoom);
+                        if (_currentZoom.truncate() != newZoom.truncate()) {
+                          HapticFeedback.selectionClick();
+                        }
+                        setState(() {
+                          _currentZoom = newZoom;
+                        });
+                        _controller.setZoom(_currentZoom);
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 20),
+                        height: _showZoomSlider ? 80 : 40,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _showZoomSlider
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      "${_currentZoom.toStringAsFixed(1)}x",
+                                      style: const TextStyle(
+                                        color: Colors.yellow,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Expanded(
+                                      child: _IosZoomDial(
+                                        currentZoom: _currentZoom,
+                                        minZoom: _minZoom,
+                                        maxZoom: _maxZoom,
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Container(
+                                  key: const ValueKey('zoom_pill'),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children:
+                                        <int>[
+                                          1,
+                                          if (_maxZoom >= 2.0) 2,
+                                          if (_maxZoom >= 3.0) 3,
+                                        ].map<Widget>((int zoom) {
+                                          final isSelected =
+                                              _currentZoom == zoom.toDouble();
+                                          return GestureDetector(
+                                            key: Key('zoom_${zoom}x'),
+                                            onTap: () {
+                                              if (_currentZoom.truncate() !=
+                                                  zoom) {
+                                                HapticFeedback.selectionClick();
+                                              }
+                                              setState(() {
+                                                _currentZoom = zoom.toDouble();
+                                              });
+                                              _controller.setZoom(_currentZoom);
+                                              _startZoomSliderTimer();
+                                            },
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                  ),
+                                              child: Text(
+                                                "${zoom}x",
+                                                style: TextStyle(
+                                                  color: isSelected
+                                                      ? Colors.yellow
+                                                      : Colors.white,
+                                                  fontWeight: isSelected
+                                                      ? FontWeight.bold
+                                                      : FontWeight.normal,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }).toList(),
+                                  ),
+                                ),
+                        ),
+                      ),
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [1, 2, 3].map((zoom) {
-                        final isSelected = _currentZoom == zoom.toDouble();
-                        return GestureDetector(
-                          key: Key('zoom_${zoom}x'),
-                          onTap: () {
-                            setState(() {
-                              _currentZoom = zoom.toDouble();
-                            });
-                            _controller.setZoom(_currentZoom);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              "${zoom}x",
-                              style: TextStyle(
-                                color: isSelected
-                                    ? Colors.yellow
-                                    : Colors.white,
-                                fontWeight: isSelected
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                                fontSize: 16,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
 
                   // Mode Selector
                   SizedBox(
@@ -670,5 +787,119 @@ class _ModeItem extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _IosZoomDial extends StatelessWidget {
+  final double currentZoom;
+  final double minZoom;
+  final double maxZoom;
+
+  const _IosZoomDial({
+    required this.currentZoom,
+    required this.minZoom,
+    required this.maxZoom,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: double.infinity,
+      width: double.infinity,
+      color: Colors.transparent,
+      child: CustomPaint(
+        painter: _ZoomDialPainter(
+          currentZoom: currentZoom,
+          minZoom: minZoom,
+          maxZoom: maxZoom,
+        ),
+      ),
+    );
+  }
+}
+
+class _ZoomDialPainter extends CustomPainter {
+  final double currentZoom;
+  final double minZoom;
+  final double maxZoom;
+
+  _ZoomDialPainter({
+    required this.currentZoom,
+    required this.minZoom,
+    required this.maxZoom,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tickPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+
+    final centerPaint = Paint()
+      ..color = Colors.yellow
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round;
+
+    // Distance between 1.0x and 2.0x
+    final double pixelsPerZoomUnit = 120.0;
+    final double halfWidth = size.width / 2;
+
+    for (int i = (minZoom * 10).toInt(); i <= (maxZoom * 10).toInt(); i++) {
+      double z = i / 10.0;
+      double x = halfWidth + ((z - currentZoom) * pixelsPerZoomUnit);
+
+      if (x < 0 || x > size.width) continue;
+
+      bool isMajor = i % 10 == 0;
+      bool isHalf = i % 5 == 0 && !isMajor;
+
+      double tickHeight = isMajor ? 24.0 : (isHalf ? 16.0 : 10.0);
+      double startY = (size.height - tickHeight) / 2;
+
+      // Apply fade out at edges
+      double distanceFromCenter = (x - halfWidth).abs();
+      double opacity = 1.0 - (distanceFromCenter / halfWidth);
+      opacity = opacity.clamp(0.0, 1.0);
+
+      tickPaint.color = Colors.white.withValues(alpha: opacity);
+
+      canvas.drawLine(
+        Offset(x, startY + 8),
+        Offset(x, startY + tickHeight + 8),
+        tickPaint,
+      );
+
+      if (isMajor) {
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: "${z.toInt()}",
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: opacity),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        );
+        textPainter.layout();
+        textPainter.paint(
+          canvas,
+          Offset(x - textPainter.width / 2, startY - 10),
+        );
+      }
+    }
+
+    // Draw center indicator
+    canvas.drawLine(
+      Offset(halfWidth, (size.height - 35) / 2 + 8),
+      Offset(halfWidth, (size.height + 35) / 2 + 8),
+      centerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ZoomDialPainter oldDelegate) {
+    return oldDelegate.currentZoom != currentZoom;
   }
 }

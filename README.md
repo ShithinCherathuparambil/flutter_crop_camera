@@ -33,11 +33,14 @@ A high-performance Flutter camera plugin with a built-in, Instagram-inspired cro
   - Free cropping and aspect ratio locking.
   - Rotation (90° steps) and horizontal flipping (mirroring).
   - Rule-of-thirds grid overlay.
-- 🔍 **Zoom Control**: Smooth digital zoom (1x, 2x, 3x).
+- 🔍 **Advanced Zoom Control**: 
+  - Smooth digital zoom with 1x, 2x, 3x presets.
+  - **iOS-Style Zoom Dial**: Interactive, haptic-enabled dial for precision zooming.
+  - Pinch-to-zoom support.
 - ⚡ **Flash Modes**: Support for Off, Auto, and On.
 - 🔄 **Camera Switching**: Toggle between front and rear cameras.
 - 📱 **Orientation Locking**: Force camera and editor screens into specific orientations (e.g., Portrait only).
-- 🎨 **Premium UI**: Sleek, dark-themed interface with micro-animations.
+- 🎨 **Premium UI**: Sleek, dark-themed interface with micro-animations and glassmorphism.
 
 ## Installation
 
@@ -45,7 +48,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.1.1
+  flutter_crop_camera: ^0.2.0
 ```
 
 ## Usage
@@ -126,28 +129,11 @@ ElevatedButton(
 )
 ```
 
-## Migration Guide (0.0.x -> 0.1.1)
+## Migration Guide (0.1.x -> 0.2.0)
 
-Version `0.1.1` introduces a cleaner, method-based API using `ImageSourcePicker`, replacing the direct usage of the `FlutterCropCamera` widget.
+Version `0.2.0` is largely backward compatible with `0.1.x` but adds enhanced zoom controls and internal performance improvements.
 
-### Old Code (v0.0.x)
-```dart
-Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (context) => Scaffold(
-      body: FlutterCropCamera(
-        cropEnabled: true,
-        onImageCaptured: (file) {
-          // Handle result
-        },
-      ),
-    ),
-  ),    
-);
-```
-
-### New Code (v0.1.1)
+### New Code (v0.2.0)
 ```dart
 final file = await ImageSourcePicker().openCamera(
   context: context,

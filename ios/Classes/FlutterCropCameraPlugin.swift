@@ -62,6 +62,12 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
             } else {
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing flash mode argument", details: nil))
             }
+        case "getMaxZoom":
+            if let device = currentDevice {
+                result(Double(device.activeFormat.videoMaxZoomFactor))
+            } else {
+                result(Double(1.0))
+            }
         default:
             result(FlutterMethodNotImplemented)
         }

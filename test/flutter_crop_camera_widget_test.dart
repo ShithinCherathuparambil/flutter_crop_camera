@@ -22,6 +22,9 @@ void main() {
           if (methodCall.method == 'cropImage') {
             return '/tmp/cropped_image.jpg';
           }
+          if (methodCall.method == 'getMaxZoom') {
+            return 8.0;
+          }
           return null;
         });
     log.clear();
@@ -47,7 +50,7 @@ void main() {
   group('FlutterCropCamera Widget Tests', () {
     testWidgets('initializes and starts camera', (tester) async {
       await tester.pumpWidget(buildTestWidget());
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(
         log,
@@ -67,7 +70,7 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(buildTestWidget());
-      await tester.pump();
+      await tester.pumpAndSettle();
       log.clear();
 
       // Off -> Auto
@@ -89,18 +92,25 @@ void main() {
       expect(log.last.arguments, {'mode': 'off'});
     });
 
-    testWidgets('zoom buttons call setZoom', (tester) async {
+    testWidgets('zoom buttons call setZoom - 2x', (tester) async {
       await tester.pumpWidget(buildTestWidget());
-      await tester.pump();
+      await tester.pumpAndSettle();
       log.clear();
 
       await tester.tap(find.byKey(const Key('zoom_2x')));
       await tester.pump();
       expect(log.last.method, 'setZoom');
       expect(log.last.arguments, {'zoom': 2.0});
+    });
+
+    testWidgets('zoom buttons call setZoom - 3x', (tester) async {
+      await tester.pumpWidget(buildTestWidget());
+      await tester.pumpAndSettle();
+      log.clear();
 
       await tester.tap(find.byKey(const Key('zoom_3x')));
       await tester.pump();
+      expect(log.last.method, 'setZoom');
       expect(log.last.arguments, {'zoom': 3.0});
     });
 
