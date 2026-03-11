@@ -230,6 +230,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
 
       // Restore the user's selected flash mode after (re)initialization.
       await _controller.setFlashMode(_flashMode);
+      await _controller.setZoom(_currentZoom);
       if (mounted) {
         setState(() {
           _isInit = true;
