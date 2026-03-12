@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import AVFoundation
 import PhotosUI
+import UniformTypeIdentifiers
 
 
 
@@ -501,21 +502,39 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         picker.dismiss(animated: true, completion: nil)
         
         guard let result = objc_getAssociatedObject(self, &AssociatedKeys.pickImageResult) as? FlutterResult else { return }
-        
+
+        // Prefer the original file URL to avoid re-encoding (preserves quality).
+        if let url = info[.imageURL] as? URL {
+            let fileExt = url.pathExtension.isEmpty ? "img" : url.pathExtension
+            let fileName = "picked_\(Int(Date().timeIntervalSince1970))_orig.\(fileExt)"
+            let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+            let fileURL = tempDir.appendingPathComponent(fileName)
+            do {
+                if FileManager.default.fileExists(atPath: fileURL.path) {
+                    try FileManager.default.removeItem(at: fileURL)
+                }
+                try FileManager.default.copyItem(at: url, to: fileURL)
+                result(fileURL.path)
+                return
+            } catch {
+                // Fall back to re-encoding if file copy fails.
+            }
+        }
+
         guard let image = info[.originalImage] as? UIImage else {
             result(FlutterError(code: "PICK_ERROR", message: "Failed to pick image", details: nil))
             return
         }
-        
+
         guard let data = image.jpegData(compressionQuality: 1.0) else {
             result(FlutterError(code: "PICK_ERROR", message: "Failed to compress captured image", details: nil))
             return
         }
-        
+
         let fileName = "picked_\(Int(Date().timeIntervalSince1970)).jpg"
         let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
-        
+
         do {
             try data.write(to: fileURL)
             result(fileURL.path)
@@ -552,34 +571,44 @@ extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
         for (index, item) in results.enumerated() {
             dispatchGroup.enter()
             
-            if item.itemProvider.canLoadObject(ofClass: UIImage.self) {
+            if item.itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
+                item.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { url, error in
+                    defer { dispatchGroup.leave() }
+                    guard let url = url else { return }
+                    let fileExt = url.pathExtension.isEmpty ? "img" : url.pathExtension
+                    let fileName = "picked_\(Int(Date().timeIntervalSince1970))_\(index).\(fileExt)"
+                    let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                    let fileURL = tempDir.appendingPathComponent(fileName)
+                    do {
+                        if FileManager.default.fileExists(atPath: fileURL.path) {
+                            try FileManager.default.removeItem(at: fileURL)
+                        }
+                        try FileManager.default.copyItem(at: url, to: fileURL)
+                        DispatchQueue.main.async {
+                            paths.append(fileURL.path)
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+            } else if item.itemProvider.canLoadObject(ofClass: UIImage.self) {
+                // Fallback: re-encode if original file isn't available.
                 item.itemProvider.loadObject(ofClass: UIImage.self) { (object, error) in
+                    defer { dispatchGroup.leave() }
                     if let image = object as? UIImage {
-                         if let data = image.jpegData(compressionQuality: 1.0) {
-                             let fileName = "picked_\(Int(Date().timeIntervalSince1970))_\(index).jpg"
-                             let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-                             let fileURL = tempDir.appendingPathComponent(fileName)
-                             
-                             do {
-                                 try data.write(to: fileURL)
-                                 // We need to synchronize access to paths array if we weren't on main thread,
-                                 // but loadObject's completion handler might be on background thread.
-                                 // Let's use a lock or perform on main queue.
-                                 // Actually simpler: just append and handle order later?
-                                 // Or wait properly.
-                                 DispatchQueue.main.async {
-                                     paths.append(fileURL.path)
-                                     dispatchGroup.leave()
-                                 }
-                             } catch {
-                                 print("Error saving image: \(error)")
-                                 dispatchGroup.leave()
-                             }
-                         } else {
-                             dispatchGroup.leave()
-                         }
-                    } else {
-                        dispatchGroup.leave()
+                        if let data = image.jpegData(compressionQuality: 1.0) {
+                            let fileName = "picked_\(Int(Date().timeIntervalSince1970))_\(index).jpg"
+                            let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
+                            let fileURL = tempDir.appendingPathComponent(fileName)
+                            do {
+                                try data.write(to: fileURL)
+                                DispatchQueue.main.async {
+                                    paths.append(fileURL.path)
+                                }
+                            } catch {
+                                // ignore
+                            }
+                        }
                     }
                 }
             } else {
@@ -639,4 +668,3 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         }
     }
 }
-

@@ -66,7 +66,7 @@ void main() {
       expect(find.text('Grid'), findsOneWidget);
       expect(find.text('Flip'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
-      expect(find.text('Save'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsOneWidget);
     });
 
     testWidgets('switches between Crop and Rotate modes', (tester) async {

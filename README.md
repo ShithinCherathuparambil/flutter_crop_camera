@@ -85,6 +85,7 @@ Eight professional, Instagram-inspired color filters baked directly into the out
 - **Rotatable** — Two-finger rotation gesture to rotate overlays freely.
 - **Deletable** — Tap an overlay to select it, then tap the delete button to remove it.
 - **Fully baked into output** — All overlays are merged into the final exported image via a Flutter `Canvas` rendering pipeline.
+- **Android-safe export path** — Platform-aware overlay baking prevents Android quality compression from stripping overlays.
 
 ### 📱 Orientation & UI
 - **Orientation Locking** — Lock both the camera and editor screens to any set of device orientations (e.g., portrait-only, landscape-only).
