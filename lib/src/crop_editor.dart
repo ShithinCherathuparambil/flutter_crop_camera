@@ -905,6 +905,13 @@ class _CropEditorState extends State<CropEditor> {
         );
         await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
 
+        // On Android, native re-compress can drop overlay content in some builds.
+        // If overlays are present, keep the Flutter-rendered PNG to preserve them.
+        if (Platform.isAndroid && hasOverlays) {
+          if (mounted) widget.onImageSaved(pngFile);
+          return;
+        }
+
         // Re-compress the PNG through the native layer to produce a JPEG at the target quality
         final String? finalPath = await widget.cropNative(
           pngFile.path,
@@ -991,6 +998,13 @@ class _CropEditorState extends State<CropEditor> {
       );
       await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
 
+      // On Android, native re-compress can drop overlay content in some builds.
+      // If overlays are present, keep the Flutter-rendered PNG to preserve them.
+      if (Platform.isAndroid && hasOverlays) {
+        if (mounted) widget.onImageSaved(pngFile);
+        return;
+      }
+
       // Re-compress the PNG through the native layer to produce a JPEG at the target quality
       final String? finalPath = await widget.cropNative(
         pngFile.path,
@@ -1015,13 +1029,19 @@ class _CropEditorState extends State<CropEditor> {
   // Called with canvas already translated to overlay center and rotated.
   // scaleFactor = realImgW / base.width (widget→image-pixel conversion).
   void _drawTextOverlay(Canvas canvas, TextOverlay item, double scaleFactor) {
-    final double scaledFontSize = item.fontSize * scaleFactor * item.scale;
+    canvas.save();
+    canvas.translate(
+      item.position.dx * scaleFactor,
+      item.position.dy * scaleFactor,
+    );
+    canvas.rotate(item.rotation);
+    canvas.scale(item.scale * scaleFactor);
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
         style: TextStyle(
           color: item.color,
-          fontSize: scaledFontSize,
+          fontSize: item.fontSize,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -1032,6 +1052,7 @@ class _CropEditorState extends State<CropEditor> {
       canvas,
       Offset(-textPainter.width / 2, -textPainter.height / 2),
     );
+    canvas.restore();
   }
 
   // Called with canvas already translated to overlay center and rotated.
@@ -1040,11 +1061,17 @@ class _CropEditorState extends State<CropEditor> {
     StickerOverlay item,
     double scaleFactor,
   ) {
-    final double scaledFontSize = item.fontSize * scaleFactor * item.scale;
+    canvas.save();
+    canvas.translate(
+      item.position.dx * scaleFactor,
+      item.position.dy * scaleFactor,
+    );
+    canvas.rotate(item.rotation);
+    canvas.scale(item.scale * scaleFactor);
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
-        style: TextStyle(fontSize: scaledFontSize),
+        style: TextStyle(fontSize: item.fontSize),
       ),
       textDirection: TextDirection.ltr,
     );
@@ -1053,5 +1080,6 @@ class _CropEditorState extends State<CropEditor> {
       canvas,
       Offset(-textPainter.width / 2, -textPainter.height / 2),
     );
+    canvas.restore();
   }
 }
