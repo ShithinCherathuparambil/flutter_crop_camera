@@ -216,48 +216,98 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         return File(croppedPath);
       }
 
-      // SLOW PATH — Flutter canvas required for filter / overlays / fineRotation.
-      final File croppedFile = File(croppedPath);
-      final Uint8List croppedBytes = await croppedFile.readAsBytes();
-      final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
-
+      // SLOW PATH: We have fine rotation, filters, or overlays.
+      late ui.Picture pictureFinal;
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(recorder);
 
-      // OPT 3: Combine fineRotation and filter into a SINGLE canvas pass.
-      // Previously this was two separate toImage() round-trips when both were set.
       if (hasFineRotation) {
-        final double cx = cropWidth / 2.0;
-        final double cy = cropHeight / 2.0;
-        canvas.translate(cx, cy);
-        canvas.rotate(fineRot);
-        canvas.translate(-cx, -cy);
-      }
+        // Must load FULL image to rotate properly before cropping.
+        final bytes = await file.readAsBytes();
+        final ui.Image fullImage = await decodeImageFromList(bytes);
 
-      final Paint paint = Paint()..colorFilter = state.activeFilter.colorFilter;
-      canvas.drawImage(croppedImage, Offset.zero, paint);
+        final recorderFull = ui.PictureRecorder();
+        final canvasFull = Canvas(recorderFull);
+        final Paint paint = Paint()
+          ..colorFilter = state.activeFilter.colorFilter;
 
-      // Draw Overlays
-      if (hasOverlays) {
-        canvas.save();
-        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
-        final double overlayScale = realImgW / base.width;
-        for (var item in state.overlays) {
-          if (item is TextOverlay) {
-            _drawTextOverlay(canvas, item, overlayScale);
-          } else if (item is StickerOverlay) {
-            _drawStickerOverlay(canvas, item, overlayScale);
+        canvasFull.save();
+
+        if (state.rotation == 1) {
+          canvasFull.translate(srcH.toDouble(), 0);
+          canvasFull.rotate(math.pi / 2);
+        } else if (state.rotation == 2) {
+          canvasFull.translate(srcW.toDouble(), srcH.toDouble());
+          canvasFull.rotate(math.pi);
+        } else if (state.rotation == 3) {
+          canvasFull.translate(0, srcW.toDouble());
+          canvasFull.rotate(3 * math.pi / 2);
+        }
+
+        if (hasFineRotation) {
+          canvasFull.translate(realImgW / 2, realImgH / 2);
+          canvasFull.rotate(fineRot);
+          canvasFull.translate(-realImgW / 2, -realImgH / 2);
+        }
+
+        if (state.flipX) {
+          canvasFull.translate(realImgW, 0);
+          canvasFull.scale(-1, 1);
+        }
+
+        canvasFull.drawImage(fullImage, Offset.zero, paint);
+        canvasFull.restore();
+        fullImage.dispose();
+
+        if (hasOverlays) {
+          final double overlayScale = realImgW / base.width;
+          for (var item in state.overlays) {
+            if (item is TextOverlay) {
+              _drawTextOverlay(canvasFull, item, overlayScale);
+            } else if (item is StickerOverlay) {
+              _drawStickerOverlay(canvasFull, item, overlayScale);
+            }
           }
         }
-        canvas.restore();
+
+        final pictureFull = recorderFull.endRecording();
+
+        // Shift canvas to extract crop box
+        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+        canvas.drawPicture(pictureFull);
+        pictureFinal = recorder.endRecording();
+      } else {
+        // If NO fine rotation, Native Crop perfectly handled the geometry!
+        final File croppedFile = File(croppedPath);
+        final Uint8List croppedBytes = await croppedFile.readAsBytes();
+        final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
+
+        final Paint paint = Paint()
+          ..colorFilter = state.activeFilter.colorFilter;
+        canvas.drawImage(croppedImage, Offset.zero, paint);
+
+        if (hasOverlays) {
+          canvas.save();
+          canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+          final double overlayScale = realImgW / base.width;
+          for (var item in state.overlays) {
+            if (item is TextOverlay) {
+              _drawTextOverlay(canvas, item, overlayScale);
+            } else if (item is StickerOverlay) {
+              _drawStickerOverlay(canvas, item, overlayScale);
+            }
+          }
+          canvas.restore();
+        }
+
+        croppedImage.dispose();
+        pictureFinal = recorder.endRecording();
       }
 
-      final ui.Picture pictureFinal = recorder.endRecording();
       final ui.Image imgFinal = await pictureFinal.toImage(
         cropWidth,
         cropHeight,
       );
-      croppedImage.dispose();
 
       final ByteData? pngBytes = await imgFinal.toByteData(
         format: ui.ImageByteFormat.png,

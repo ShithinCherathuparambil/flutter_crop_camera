@@ -39,7 +39,10 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
                let height = args["height"] as? Int {
                 let rotationDegrees = args["rotationDegrees"] as? Int ?? 0
                 let flipX = args["flipX"] as? Bool ?? false
-                cropImage(path: path, x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height), rotationDegrees: rotationDegrees, flipX: flipX, result: result)
+                // quality is passed as 0–100 int from Flutter; convert to 0.0–1.0 for UIImage
+                let qualityInt = args["quality"] as? Int ?? 100
+                let compressionQuality = max(0.0, min(1.0, Double(qualityInt) / 100.0))
+                cropImage(path: path, x: CGFloat(x), y: CGFloat(y), width: CGFloat(width), height: CGFloat(height), rotationDegrees: rotationDegrees, flipX: flipX, compressionQuality: compressionQuality, result: result)
             } else {
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing arguments", details: nil))
             }
@@ -302,19 +305,22 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         }
     }
     
-    func cropImage(path: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rotationDegrees: Int, flipX: Bool, result: @escaping FlutterResult) {
+    func cropImage(path: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, rotationDegrees: Int, flipX: Bool, compressionQuality: Double = 1.0, result: @escaping FlutterResult) {
         guard let image = UIImage(contentsOfFile: path) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to load image", details: nil))
             return
         }
         
         // Step 1: Normalize EXIF orientation first (like Android does)
-        // This converts the image to .up orientation by applying the EXIF rotation
+        // CRITICAL: We MUST force the scale to 1.0. 
+        // Flutter sends crop coordinates in RAW PIXELS (from ImageDescriptor).
+        // If image.scale is e.g. 3.0, iOS UIGraphics contexts will interpret coordinates as points
+        // and create entirely different sized CGImages. Forcing scale = 1.0 ensures 1 point = 1 raw pixel.
         let normalizedImage: UIImage
-        if image.imageOrientation == .up {
+        if image.imageOrientation == .up && image.scale == 1.0 {
             normalizedImage = image
         } else {
-            UIGraphicsBeginImageContextWithOptions(image.size, false, image.scale)
+            UIGraphicsBeginImageContextWithOptions(image.size, false, 1.0)
             image.draw(in: CGRect(origin: .zero, size: image.size))
             normalizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
             UIGraphicsEndImageContext()
@@ -334,8 +340,8 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
                 rotatedSize = normalizedImage.size
             }
             
-            // Create graphics context for user transformation
-            UIGraphicsBeginImageContextWithOptions(rotatedSize, false, normalizedImage.scale)
+            // Create graphics context for user transformation (scale 1.0)
+            UIGraphicsBeginImageContextWithOptions(rotatedSize, false, 1.0)
             guard let context = UIGraphicsGetCurrentContext() else {
                 result(FlutterError(code: "CROP_ERROR", message: "Failed to create graphics context", details: nil))
                 return
@@ -370,7 +376,38 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
             return
         }
         
-        let rect = CGRect(x: x, y: y, width: width, height: height)
+        // Flutter sends crop coordinates in raw image PIXELS.
+        // But UIImage may have a 'scale' > 1.0 (e.g. @2x or @3x) which means its logical size is smaller.
+        // When we created transformedImage via UIGraphicsBeginImageContextWithOptions, it inherited the original image's scale.
+        // CGImage operations ALWAYS work in raw pixels, so we must multiply our Flutter coordinates
+        // (which are already in intended raw image pixels) by 1.0 because Flutter calculates them based on raw pixels.
+        // Wait, Flutter calculates based on raw pixels, so `x`, `y`, `width`, `height` are ALREADY in raw pixels.
+        // But `transformedCgImage` is in raw pixels too!
+        // So no scale multiplication is needed for CGImage!
+        
+        // Wait, then why did the sticker get enormous on iOS?
+        // Let's look closer at UIGraphicsBeginImageContextWithOptions(rotatedSize, false, normalizedImage.scale).
+        // If normalizedImage.scale is 3.0, UIGraphicsBeginImageContextWithOptions creates a CGContext with
+        // coordinate system in *points*.
+        // If we draw a 3000x4000 pixel image (scale 1.0) into it, it's 1:1.
+        // If we draw a 3000x4000 pixel image with scale 3.0 into it, it draws it at 1000x1333 points.
+        // The resulting CGImage will be 3000x4000 pixels (1000 * 3.0).
+        // Let's apply the scale conversion safely:
+        let cropScale = transformedImage.scale
+        // 🚨 CRITICAL FIX: The incoming x, y, width, height from Flutter are EXACT PIXELS of the original image.
+        // But our transformedImage might have an intrinsic scale. If so, its CGImage is `scaledSize * scale` pixels.
+        // Actually, UIGraphicsBeginImageContextWithOptions creates an image where size is in points.
+        // Flutter sends x,y,w,h calculated from `_imgWidth` and `_imgHeight` (which are raw pixels from image descriptor).
+        // So x, y, width, height are RAW PIXELS.
+        // If the iOS CGImage is also RAW PIXELS, standard CGRect works... BUT Wait.
+        // In iOS, if image.scale > 1.0, the UIGraphicsDraw logic may have scaled the content differently relative to the CGImage bounds!
+        // To be safe and bypass entirely: iOS UIImage scale should just be forced to 1.0 so points == pixels everywhere.
+        let rect = CGRect(
+            x: x, 
+            y: y, 
+            width: width, 
+            height: height
+        )
         guard let croppedCgImage = transformedCgImage.cropping(to: rect) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to crop image", details: nil))
             return
@@ -379,13 +416,13 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         let croppedImage = UIImage(cgImage: croppedCgImage, scale: transformedImage.scale, orientation: .up)
         
         // Step 4: Save the cropped image
-        guard let data = croppedImage.jpegData(compressionQuality: 1.0) else {
+        guard let data = croppedImage.jpegData(compressionQuality: compressionQuality) else {
             result(FlutterError(code: "CROP_ERROR", message: "Failed to compress image", details: nil))
             return
         }
         
         let fileName = "cropped_\(UUID().uuidString).jpg"
-        let tempDir = FileManager.default.temporaryDirectory
+        let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
         
         do {
@@ -476,7 +513,7 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         }
         
         let fileName = "picked_\(Int(Date().timeIntervalSince1970)).jpg"
-        let tempDir = FileManager.default.temporaryDirectory
+        let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
         
         do {
@@ -520,7 +557,7 @@ extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
                     if let image = object as? UIImage {
                          if let data = image.jpegData(compressionQuality: 1.0) {
                              let fileName = "picked_\(Int(Date().timeIntervalSince1970))_\(index).jpg"
-                             let tempDir = FileManager.default.temporaryDirectory
+                             let tempDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
                              let fileURL = tempDir.appendingPathComponent(fileName)
                              
                              do {
@@ -591,7 +628,7 @@ class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         }
         
         let fileName = "clicked_\(Int(Date().timeIntervalSince1970)).jpg"
-        let tempDir = FileManager.default.temporaryDirectory
+        let tempDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
         
         do {

@@ -829,93 +829,180 @@ class _CropEditorState extends State<CropEditor> {
       final double scaleX = realImgW / base.width;
       final double scaleY = realImgH / base.height;
 
-      // Final crop area in original image pixels
+      // Final crop area in original image pixels (using rotated dimensions)
       final int cropX = (rect.left * scaleX).round();
       final int cropY = (rect.top * scaleY).round();
       final int cropWidth = (rect.width * scaleX).round();
       final int cropHeight = (rect.height * scaleY).round();
-
-      // Convert rotation step (0-3) to actual degrees (0, 90, 180, 270)
-      final int rotationDegrees = _state.rotation * 90;
-      final String? croppedPath = await widget.cropNative(
-        widget.file.path,
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight,
-        rotationDegrees,
-        _state.flipX,
-      );
-
-      if (croppedPath == null) throw Exception("Native crop failed");
 
       final double fineRot = _state.fineRotation;
       final bool hasFineRotation = fineRot.abs() > 0.001;
       final bool hasOverlays = _overlays.isNotEmpty;
       final bool hasFilter = !_isIdentityFilter(_activeFilter);
 
-      // FAST PATH: native already produced the final JPEG — no Flutter canvas needed.
-      if (!hasFineRotation && !hasFilter && !hasOverlays) {
-        final File nativeResult = File(croppedPath);
-        if (mounted) widget.onImageSaved(nativeResult);
+      if (!hasFineRotation) {
+        // FAST PATH: Native crop can perfectly handle base rotation and flip.
+        final int rotationDegrees = _state.rotation * 90;
+        final String? croppedPath = await widget.cropNative(
+          widget.file.path,
+          cropX,
+          cropY,
+          cropWidth,
+          cropHeight,
+          rotationDegrees,
+          _state.flipX,
+        );
+
+        if (croppedPath == null) throw Exception("Native crop failed");
+
+        if (!hasFilter && !hasOverlays) {
+          final File nativeResult = File(croppedPath);
+          if (mounted) widget.onImageSaved(nativeResult);
+          return;
+        }
+
+        // We have filters or overlays, but native crop handled the geometry safely.
+        final File croppedFile = File(croppedPath);
+        final Uint8List croppedBytes = await croppedFile.readAsBytes();
+        final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
+
+        final ui.PictureRecorder recorder = ui.PictureRecorder();
+        final Canvas canvas = Canvas(recorder);
+
+        final Paint paint = Paint()..colorFilter = _activeFilter.colorFilter;
+        canvas.drawImage(croppedImage, Offset.zero, paint);
+
+        if (hasOverlays) {
+          canvas.save();
+          canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+          final double overlayScale = realImgW / base.width;
+          for (var item in _overlays) {
+            if (item is TextOverlay) {
+              _drawTextOverlay(canvas, item, overlayScale);
+            } else if (item is StickerOverlay) {
+              _drawStickerOverlay(canvas, item, overlayScale);
+            }
+          }
+          canvas.restore();
+        }
+
+        final ui.Picture pictureFinal = recorder.endRecording();
+        final ui.Image imgFinal = await pictureFinal.toImage(
+          cropWidth,
+          cropHeight,
+        );
+        croppedImage.dispose();
+
+        final ByteData? pngBytes = await imgFinal.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
+        imgFinal.dispose();
+
+        if (pngBytes == null) throw Exception("Encode failed");
+        final tempDir = await getTemporaryDirectory();
+        final pngFile = File(
+          '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
+        );
+        await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
+
+        // Re-compress the PNG through the native layer to produce a JPEG at the target quality
+        final String? finalPath = await widget.cropNative(
+          pngFile.path,
+          0,
+          0,
+          cropWidth,
+          cropHeight,
+          0, // no rotation
+          false, // no flip
+        );
+        pngFile.deleteSync(recursive: false);
+        final File savedFile = finalPath != null ? File(finalPath) : pngFile;
+        if (mounted) widget.onImageSaved(savedFile);
         return;
       }
 
-      // SLOW PATH: load cropped image and apply filter / fineRotation / overlays.
-      final File croppedFile = File(croppedPath);
-      final Uint8List croppedBytes = await croppedFile.readAsBytes();
-      final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
+      // SLOW PATH: We have fine rotation, we CANNOT crop FIRST! We must render the whole image.
+      final bytes = await widget.file.readAsBytes();
+      final ui.Image fullImage = await decodeImageFromList(bytes);
 
-      final ui.PictureRecorder recorder = ui.PictureRecorder();
-      final Canvas canvas = Canvas(recorder);
+      final recorderFull = ui.PictureRecorder();
+      final canvasFull = Canvas(recorderFull);
+      final Paint paint = Paint()..colorFilter = _activeFilter.colorFilter;
 
-      // Combine fineRotation + filter into a single canvas pass (was two passes).
-      if (hasFineRotation) {
-        final double cx = cropWidth / 2.0;
-        final double cy = cropHeight / 2.0;
-        canvas.translate(cx, cy);
-        canvas.rotate(fineRot);
-        canvas.translate(-cx, -cy);
+      canvasFull.save();
+
+      if (_state.rotation == 1) {
+        canvasFull.translate(_imgHeight.toDouble(), 0);
+        canvasFull.rotate(math.pi / 2);
+      } else if (_state.rotation == 2) {
+        canvasFull.translate(_imgWidth.toDouble(), _imgHeight.toDouble());
+        canvasFull.rotate(math.pi);
+      } else if (_state.rotation == 3) {
+        canvasFull.translate(0, _imgWidth.toDouble());
+        canvasFull.rotate(3 * math.pi / 2);
       }
 
-      final Paint paint = Paint()..colorFilter = _activeFilter.colorFilter;
-      canvas.drawImage(croppedImage, Offset.zero, paint);
+      canvasFull.translate(realImgW / 2, realImgH / 2);
+      canvasFull.rotate(fineRot);
+      canvasFull.translate(-realImgW / 2, -realImgH / 2);
 
-      // Draw overlays
+      if (_state.flipX) {
+        canvasFull.translate(realImgW, 0);
+        canvasFull.scale(-1, 1);
+      }
+
+      canvasFull.drawImage(fullImage, Offset.zero, paint);
+      canvasFull.restore();
+      fullImage.dispose();
+
       if (hasOverlays) {
-        canvas.save();
-        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
         final double overlayScale = realImgW / base.width;
         for (var item in _overlays) {
           if (item is TextOverlay) {
-            _drawTextOverlay(canvas, item, overlayScale);
+            _drawTextOverlay(canvasFull, item, overlayScale);
           } else if (item is StickerOverlay) {
-            _drawStickerOverlay(canvas, item, overlayScale);
+            _drawStickerOverlay(canvasFull, item, overlayScale);
           }
         }
-        canvas.restore();
       }
 
-      final ui.Picture pictureFinal = recorder.endRecording();
+      final pictureFull = recorderFull.endRecording();
+
+      final ui.PictureRecorder recorderFinal = ui.PictureRecorder();
+      final Canvas canvasFinal = Canvas(recorderFinal);
+      canvasFinal.translate(-cropX.toDouble(), -cropY.toDouble());
+      canvasFinal.drawPicture(pictureFull);
+
+      final ui.Picture pictureFinal = recorderFinal.endRecording();
       final ui.Image imgFinal = await pictureFinal.toImage(
         cropWidth,
         cropHeight,
       );
-      croppedImage.dispose();
 
       final ByteData? pngBytes = await imgFinal.toByteData(
         format: ui.ImageByteFormat.png,
       );
       imgFinal.dispose();
 
-      if (pngBytes == null) throw Exception("Failed to encode image");
-
+      if (pngBytes == null) throw Exception("Encode failed");
       final tempDir = await getTemporaryDirectory();
-      final File savedFile = File(
-        '${tempDir.path}/edited_${DateTime.now().millisecondsSinceEpoch}.png',
+      final pngFile = File(
+        '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
       );
-      await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
+      await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
 
+      // Re-compress the PNG through the native layer to produce a JPEG at the target quality
+      final String? finalPath = await widget.cropNative(
+        pngFile.path,
+        0,
+        0,
+        cropWidth,
+        cropHeight,
+        0, // no rotation
+        false, // no flip
+      );
+      pngFile.deleteSync(recursive: false);
+      final File savedFile = finalPath != null ? File(finalPath) : pngFile;
       if (mounted) {
         widget.onImageSaved(savedFile);
       }
@@ -925,20 +1012,16 @@ class _CropEditorState extends State<CropEditor> {
     }
   }
 
+  // Called with canvas already translated to overlay center and rotated.
+  // scaleFactor = realImgW / base.width (widget→image-pixel conversion).
   void _drawTextOverlay(Canvas canvas, TextOverlay item, double scaleFactor) {
-    canvas.save();
-    canvas.translate(
-      item.position.dx * scaleFactor,
-      item.position.dy * scaleFactor,
-    );
-    canvas.rotate(item.rotation);
-    canvas.scale(item.scale * scaleFactor);
+    final double scaledFontSize = item.fontSize * scaleFactor * item.scale;
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
         style: TextStyle(
           color: item.color,
-          fontSize: item.fontSize,
+          fontSize: scaledFontSize,
           fontWeight: FontWeight.bold,
         ),
       ),
@@ -949,25 +1032,19 @@ class _CropEditorState extends State<CropEditor> {
       canvas,
       Offset(-textPainter.width / 2, -textPainter.height / 2),
     );
-    canvas.restore();
   }
 
+  // Called with canvas already translated to overlay center and rotated.
   void _drawStickerOverlay(
     Canvas canvas,
     StickerOverlay item,
     double scaleFactor,
   ) {
-    canvas.save();
-    canvas.translate(
-      item.position.dx * scaleFactor,
-      item.position.dy * scaleFactor,
-    );
-    canvas.rotate(item.rotation);
-    canvas.scale(item.scale * scaleFactor);
+    final double scaledFontSize = item.fontSize * scaleFactor * item.scale;
     final textPainter = TextPainter(
       text: TextSpan(
         text: item.text,
-        style: TextStyle(fontSize: item.fontSize),
+        style: TextStyle(fontSize: scaledFontSize),
       ),
       textDirection: TextDirection.ltr,
     );
@@ -976,6 +1053,5 @@ class _CropEditorState extends State<CropEditor> {
       canvas,
       Offset(-textPainter.width / 2, -textPainter.height / 2),
     );
-    canvas.restore();
   }
 }

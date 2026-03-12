@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../flutter_crop_camera_controller.dart';
@@ -187,6 +188,9 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
   double _maxZoom = 8.0;
   final double _minZoom = 1.0;
 
+  /// Prevents duplicate capture/crop screens from rapid shutter button presses.
+  bool _isCapturing = false;
+
   @override
   void initState() {
     super.initState();
@@ -354,6 +358,36 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
     super.dispose();
   }
 
+  /// Compresses [file] to JPEG at [widget.quality] using the native channel.
+  /// If quality is 1.0 (maximum), returns [file] unchanged immediately.
+  /// Uses ImageDescriptor for fast header-only dimension reading.
+  Future<File> _compressIfNeeded(File file) async {
+    if (widget.quality >= 1.0) return file;
+    try {
+      final bytes = await file.readAsBytes();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final int w = descriptor.width;
+      final int h = descriptor.height;
+      buffer.dispose();
+
+      final String? compressed = await _controller.cropImage(
+        path: file.path,
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+        rotationDegrees: 0,
+        flipX: false,
+        quality: (widget.quality * 100).toInt(),
+      );
+      return compressed != null ? File(compressed) : file;
+    } catch (e) {
+      debugPrint('_compressIfNeeded error: $e');
+      return file;
+    }
+  }
+
   /// Pick image from gallery
   Future<void> _pickFromGallery() async {
     try {
@@ -403,8 +437,8 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
               if (mounted) Navigator.pop(context);
             }
           } else {
-            // No cropping, just return the file
-            widget.onImageCaptured?.call(file);
+            // No cropping — still apply quality compression if needed
+            widget.onImageCaptured?.call(await _compressIfNeeded(file));
             // Controlled via callback return
           }
         } else {
@@ -454,7 +488,11 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
               if (mounted) Navigator.pop(context);
             }
           } else {
-            widget.onImagesCaptured?.call(files);
+            // No cropping — compress all files at the desired quality
+            final List<File> compressed = await Future.wait(
+              files.map((f) => _compressIfNeeded(f)),
+            );
+            widget.onImagesCaptured?.call(compressed);
             // Controlled via callback return
           }
         } else {
@@ -472,6 +510,8 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
 
   /// Captures the image and either navigates to the crop editor or returns the result.
   Future<void> _capture() async {
+    if (_isCapturing) return; // debounce: ignore rapid consecutive taps
+    _isCapturing = true;
     try {
       // 1. Capture the raw image to temporary storage.
       final path = await _controller.takePicture();
@@ -513,12 +553,15 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
             widget.onImageCaptured?.call(croppedFile);
           }
         } else {
-          // 3. If cropping is disabled, return the raw image file directly.
-          widget.onImageCaptured?.call(file);
+          // Cropping disabled — still apply quality compression if needed.
+          widget.onImageCaptured?.call(await _compressIfNeeded(file));
         }
       }
     } catch (e) {
       debugPrint("Error capturing: $e");
+    } finally {
+      // Always clear the flag so the button works again if the user returns.
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 

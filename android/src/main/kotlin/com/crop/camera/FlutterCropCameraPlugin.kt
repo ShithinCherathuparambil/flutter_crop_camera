@@ -15,6 +15,7 @@ import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -300,26 +301,52 @@ class FlutterCropCameraPlugin :
     }
 
     private fun takePicture(result: Result) {
-        val imageCapture =
+        val ic =
                 imageCapture
                         ?: return result.error(
                                 "CAMERA_INIT_ERROR",
                                 "ImageCapture not initialized",
                                 null
                         )
-        val file = File(activity!!.externalCacheDir, "clicked_${System.currentTimeMillis()}.jpg")
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(file).build()
 
-        imageCapture.takePicture(
-                outputOptions,
+        // Use OnImageCapturedCallback (in-memory) instead of OnImageSavedCallback (file).
+        // CameraX delivers raw JPEG bytes directly — no temp file is created by CameraX,
+        // so there is no race where the file disappears before cropImage reads it.
+        // We write the bytes ourselves to filesDir, which Android never auto-cleans.
+        ic.takePicture(
                 ContextCompat.getMainExecutor(activity!!),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onError(exc: ImageCaptureException) {
-                        result.error("CAPTURE_ERROR", "Photo capture failed: ${exc.message}", null)
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(imageProxy: ImageProxy) {
+                        try {
+                            // Extract JPEG bytes from the ImageProxy plane.
+                            val buffer = imageProxy.planes[0].buffer
+                            val bytes = ByteArray(buffer.remaining())
+                            buffer.get(bytes)
+                            imageProxy.close()
+
+                            // Write to filesDir — always available, never auto-cleaned.
+                            val dir =
+                                    context?.filesDir
+                                            ?: activity?.filesDir
+                                                    ?: return result.error(
+                                                    "CAMERA_ERROR",
+                                                    "Files dir unavailable",
+                                                    null
+                                            )
+                            val file = File(dir, "capture_${System.currentTimeMillis()}.jpg")
+                            file.writeBytes(bytes)
+                            result.success(file.absolutePath)
+                        } catch (e: Exception) {
+                            result.error(
+                                    "CAPTURE_ERROR",
+                                    "Failed to process captured image: ${e.message}",
+                                    null
+                            )
+                        }
                     }
 
-                    override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                        result.success(file.absolutePath)
+                    override fun onError(exc: ImageCaptureException) {
+                        result.error("CAPTURE_ERROR", "Photo capture failed: ${exc.message}", null)
                     }
                 }
         )
@@ -420,7 +447,7 @@ class FlutterCropCameraPlugin :
                                 "cropped_${java.util.UUID.randomUUID()}.jpg"
                         )
                 val out = FileOutputStream(croppedFile)
-                croppedBitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+                croppedBitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), out)
                 out.flush()
                 out.close()
 
