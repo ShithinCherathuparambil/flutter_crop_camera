@@ -776,6 +776,38 @@ class _CropEditorState extends State<CropEditor> {
     );
   }
 
+  // Helper: check if the active filter is the identity (no-op)
+  static const List<double> _identityMatrix = [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+
+  bool _isIdentityFilter(Filter filter) {
+    final m = filter.matrix;
+    for (int j = 0; j < _identityMatrix.length; j++) {
+      if ((m[j] - _identityMatrix[j]).abs() > 0.001) return false;
+    }
+    return true;
+  }
+
   Future<void> _saveImage() async {
     if (_isSaving) return;
     if (_image == null) return;
@@ -803,20 +835,33 @@ class _CropEditorState extends State<CropEditor> {
       final int cropWidth = (rect.width * scaleX).round();
       final int cropHeight = (rect.height * scaleY).round();
 
-      // OPTIMIZATION: Use native crop first to get a smaller image
+      // Convert rotation step (0-3) to actual degrees (0, 90, 180, 270)
+      final int rotationDegrees = _state.rotation * 90;
       final String? croppedPath = await widget.cropNative(
         widget.file.path,
         cropX,
         cropY,
         cropWidth,
         cropHeight,
-        _state.rotation,
+        rotationDegrees,
         _state.flipX,
       );
 
       if (croppedPath == null) throw Exception("Native crop failed");
 
-      // Now load the much smaller cropped image for final processing
+      final double fineRot = _state.fineRotation;
+      final bool hasFineRotation = fineRot.abs() > 0.001;
+      final bool hasOverlays = _overlays.isNotEmpty;
+      final bool hasFilter = !_isIdentityFilter(_activeFilter);
+
+      // FAST PATH: native already produced the final JPEG — no Flutter canvas needed.
+      if (!hasFineRotation && !hasFilter && !hasOverlays) {
+        final File nativeResult = File(croppedPath);
+        if (mounted) widget.onImageSaved(nativeResult);
+        return;
+      }
+
+      // SLOW PATH: load cropped image and apply filter / fineRotation / overlays.
       final File croppedFile = File(croppedPath);
       final Uint8List croppedBytes = await croppedFile.readAsBytes();
       final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
@@ -824,37 +869,43 @@ class _CropEditorState extends State<CropEditor> {
       final ui.PictureRecorder recorder = ui.PictureRecorder();
       final Canvas canvas = Canvas(recorder);
 
-      // Apply filter to the cropped image
+      // Combine fineRotation + filter into a single canvas pass (was two passes).
+      if (hasFineRotation) {
+        final double cx = cropWidth / 2.0;
+        final double cy = cropHeight / 2.0;
+        canvas.translate(cx, cy);
+        canvas.rotate(fineRot);
+        canvas.translate(-cx, -cy);
+      }
+
       final Paint paint = Paint()..colorFilter = _activeFilter.colorFilter;
       canvas.drawImage(croppedImage, Offset.zero, paint);
 
-      // Draw Overlays on top
-      // Coordinate space for overlays: they were relative to the baseSize box.
-      // Now the canvas IS the cropWidth x cropHeight box.
-      // We need to shift overlay positions by the crop starting point.
-      canvas.save();
-      canvas.translate(-cropX.toDouble(), -cropY.toDouble());
-      final double overlayScale = realImgW / base.width;
-      for (var item in _overlays) {
-        if (item is TextOverlay) {
-          _drawTextOverlay(canvas, item, overlayScale);
-        } else if (item is StickerOverlay) {
-          _drawStickerOverlay(canvas, item, overlayScale);
+      // Draw overlays
+      if (hasOverlays) {
+        canvas.save();
+        canvas.translate(-cropX.toDouble(), -cropY.toDouble());
+        final double overlayScale = realImgW / base.width;
+        for (var item in _overlays) {
+          if (item is TextOverlay) {
+            _drawTextOverlay(canvas, item, overlayScale);
+          } else if (item is StickerOverlay) {
+            _drawStickerOverlay(canvas, item, overlayScale);
+          }
         }
+        canvas.restore();
       }
-      canvas.restore();
 
-      final pictureFinal = recorder.endRecording();
+      final ui.Picture pictureFinal = recorder.endRecording();
       final ui.Image imgFinal = await pictureFinal.toImage(
         cropWidth,
         cropHeight,
       );
+      croppedImage.dispose();
 
       final ByteData? pngBytes = await imgFinal.toByteData(
         format: ui.ImageByteFormat.png,
       );
-
-      croppedImage.dispose();
       imgFinal.dispose();
 
       if (pngBytes == null) throw Exception("Failed to encode image");
