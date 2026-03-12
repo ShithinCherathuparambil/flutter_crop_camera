@@ -567,6 +567,7 @@ extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
         
         var paths: [String] = []
         let dispatchGroup = DispatchGroup()
+        let pathsLock = NSLock()
         
         for (index, item) in results.enumerated() {
             dispatchGroup.enter()
@@ -584,9 +585,9 @@ extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
                             try FileManager.default.removeItem(at: fileURL)
                         }
                         try FileManager.default.copyItem(at: url, to: fileURL)
-                        DispatchQueue.main.async {
-                            paths.append(fileURL.path)
-                        }
+                        pathsLock.lock()
+                        paths.append(fileURL.path)
+                        pathsLock.unlock()
                     } catch {
                         // ignore
                     }
@@ -602,9 +603,9 @@ extension FlutterCropCameraPlugin: PHPickerViewControllerDelegate {
                             let fileURL = tempDir.appendingPathComponent(fileName)
                             do {
                                 try data.write(to: fileURL)
-                                DispatchQueue.main.async {
-                                    paths.append(fileURL.path)
-                                }
+                                pathsLock.lock()
+                                paths.append(fileURL.path)
+                                pathsLock.unlock()
                             } catch {
                                 // ignore
                             }

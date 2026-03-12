@@ -1,3 +1,22 @@
+## 0.1.6
+* Added Android runtime camera permission handling and documentation.
+
+## 0.1.5
+* Added safe fallback for temp directory lookup when path_provider isn’t registered.
+* Documented MissingPluginException troubleshooting steps in README.
+
+## 0.1.4
+* Guarded `getMaxZoom` against MissingPluginException to avoid crash on older builds.
+
+## 0.1.3
+* Prevented Android crop OOMs by downsampling extremely large images during native crop.
+* Android picker/crop temp files now use internal cache for better reliability.
+
+## 0.1.2
+* Fixed iOS gallery picker to preserve original image quality by copying the source file when available.
+* Fixed single-image editor overlay export transforms to match multi-image editor.
+* Added Android-safe overlay export path to prevent quality compression from stripping overlays.
+
 ## 0.2.0
 * **Major Feature**: Achieved full feature parity between Single Image and Multi-Image cropping editors.
 * **New UI**: Separated Aspect Ratio cropping and Rotation controls into dedicated, intuitive tabs (`Crop` and `Rotate`).

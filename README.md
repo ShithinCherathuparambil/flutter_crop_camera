@@ -100,7 +100,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.2.0
+  flutter_crop_camera: ^0.1.6
 ```
 
 Then run:
@@ -127,6 +127,10 @@ Add the following to your `android/app/src/main/AndroidManifest.xml`:
 <uses-feature android:name="android.hardware.camera" />
 <uses-feature android:name="android.hardware.camera.autofocus" />
 ```
+
+> **Runtime Permission (Android):**
+> You must request **camera permission at runtime** on Android 6.0+.
+> The plugin will prompt automatically if permission is missing, but your app must still declare the permission in the manifest (above).
 
 > **Note on Gallery Permissions (Android):**
 > No storage permissions (`READ_EXTERNAL_STORAGE`, `READ_MEDIA_IMAGES`) are needed. The gallery picker uses the system's built-in media picker intent (`ACTION_PICK`), which gives the app temporary access to the selected images without requiring any storage permission. Adding unnecessary storage permissions will cause **Google Play policy violations**.
@@ -172,6 +176,28 @@ post_install do |installer|
   end
 end
 ```
+
+---
+
+## Troubleshooting
+
+### MissingPluginException (path_provider / getTemporaryDirectory)
+If you see errors like `MissingPluginException(No implementation found for method getTemporaryDirectory...)`, it means platform plugins haven’t been registered in the host app.
+
+Try these in order:
+- **Full rebuild** after adding/updating the plugin:
+  ```bash
+  flutter clean
+  flutter pub get
+  flutter run
+  ```
+- **Ensure Android embedding v2** (in `MainActivity`):
+  ```kotlin
+  class MainActivity: FlutterActivity() {}
+  ```
+- **If using a custom FlutterEngine or add-to-app**, ensure plugins are registered:
+  - Android: `GeneratedPluginRegistrant.registerWith(engine)`
+  - iOS: `GeneratedPluginRegistrant.register(with: flutterEngine)`
 
 ---
 
@@ -316,9 +342,9 @@ The main entry point of the plugin.
 
 ## Migration Guide
 
-### 0.1.x → 0.2.0
+### 0.1.x → 0.1.6
 
-Version `0.2.0` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
+Version `0.1.6` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
 
 - Photo **Filters** (8 presets) now appear as a tab in the crop editor.
 - **Text and Emoji Sticker overlays** can be added in the crop editor.
@@ -326,7 +352,7 @@ Version `0.2.0` is largely backward compatible with `0.1.x`. The `ImageSourcePic
 - Multi-image editor now has full feature parity with the single-image editor.
 - Internal **Canvas-based image baking pipeline** for correctly merging filters, overlays, and rotation into the output file.
 
-No code changes are required to upgrade from `0.1.x` to `0.2.0`.
+No code changes are required to upgrade from `0.1.x` to `0.1.6`.
 
 ---
 

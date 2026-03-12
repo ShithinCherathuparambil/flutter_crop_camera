@@ -899,7 +899,7 @@ class _CropEditorState extends State<CropEditor> {
         imgFinal.dispose();
 
         if (pngBytes == null) throw Exception("Encode failed");
-        final tempDir = await getTemporaryDirectory();
+        final tempDir = await _resolveTempDir();
         final pngFile = File(
           '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
         );
@@ -992,7 +992,7 @@ class _CropEditorState extends State<CropEditor> {
       imgFinal.dispose();
 
       if (pngBytes == null) throw Exception("Encode failed");
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await _resolveTempDir();
       final pngFile = File(
         '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
       );
@@ -1081,5 +1081,15 @@ class _CropEditorState extends State<CropEditor> {
       Offset(-textPainter.width / 2, -textPainter.height / 2),
     );
     canvas.restore();
+  }
+
+  Future<Directory> _resolveTempDir() async {
+    try {
+      return await getTemporaryDirectory();
+    } on MissingPluginException {
+      return Directory.systemTemp;
+    } on PlatformException {
+      return Directory.systemTemp;
+    }
   }
 }

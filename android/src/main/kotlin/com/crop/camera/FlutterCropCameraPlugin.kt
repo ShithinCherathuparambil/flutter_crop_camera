@@ -3,6 +3,7 @@ package com.crop.camera
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -21,6 +22,7 @@ import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.plugins.FlutterPlugin
 import io.flutter.embedding.engine.plugins.activity.ActivityAware
@@ -36,16 +38,25 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 
 /** FlutterCropCameraPlugin */
 class FlutterCropCameraPlugin :
-        FlutterPlugin, MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
+        FlutterPlugin,
+        MethodCallHandler,
+        ActivityAware,
+        PluginRegistry.ActivityResultListener,
+        PluginRegistry.RequestPermissionsResultListener {
     private lateinit var channel: MethodChannel
     private lateinit var textureRegistry: TextureRegistry
     private var activity: Activity? = null
     private var activityBinding: ActivityPluginBinding? = null
     private var pendingResult: Result? = null
+    private var pendingStartCall: MethodCall? = null
+    private var pendingStartResult: Result? = null
+    private var requestingCameraPermission = false
     private val PICK_IMAGE_REQUEST_CODE = 1994
+    private val CAMERA_PERMISSION_REQUEST_CODE = 1995
     private var context: Context? = null
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
@@ -57,6 +68,7 @@ class FlutterCropCameraPlugin :
     private var targetAspectRatio = AspectRatio.RATIO_4_3
     private var jpegQuality = 100
     private var isMultiPick = false
+    private val MAX_CROP_PIXELS: Long = 20_000_000L
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter_crop_camera")
@@ -125,6 +137,20 @@ class FlutterCropCameraPlugin :
         val activity = activity
         if (activity == null) {
             result?.error("NO_ACTIVITY", "Activity is null", null)
+            return
+        }
+
+        if (!hasCameraPermission(activity)) {
+            pendingStartCall = call
+            pendingStartResult = result
+            if (!requestingCameraPermission) {
+                requestingCameraPermission = true
+                ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.CAMERA),
+                        CAMERA_PERMISSION_REQUEST_CODE
+                )
+            }
             return
         }
 
@@ -251,6 +277,13 @@ class FlutterCropCameraPlugin :
         )
     }
 
+    private fun hasCameraPermission(activity: Activity): Boolean {
+        return ContextCompat.checkSelfPermission(
+                activity,
+                android.Manifest.permission.CAMERA
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     private fun switchCamera(result: Result) {
         if (cameraProvider == null) {
             result.error("CAMERA_NOT_INIT", "Camera not initialized", null)
@@ -298,6 +331,19 @@ class FlutterCropCameraPlugin :
 
         imageCapture?.flashMode = flashMode
         result.success(null)
+    }
+
+    private fun computeInSampleSize(width: Int, height: Int): Int {
+        if (width <= 0 || height <= 0) return 1
+        var sample = 1
+        var w = width.toLong()
+        var h = height.toLong()
+        while (w * h > MAX_CROP_PIXELS) {
+            sample *= 2
+            w = width.toLong() / sample
+            h = height.toLong() / sample
+        }
+        return sample
     }
 
     private fun takePicture(result: Result) {
@@ -365,8 +411,24 @@ class FlutterCropCameraPlugin :
     ) {
         cameraExecutor.execute {
             try {
-                // 1. Decode original bitmap
-                val originalBitmap = BitmapFactory.decodeFile(path)
+                // 1. Decode original bitmap (downsample if extremely large to avoid OOM)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, bounds)
+                val inSampleSize = computeInSampleSize(bounds.outWidth, bounds.outHeight)
+                val decodeOptions =
+                        BitmapFactory.Options().apply {
+                            this.inSampleSize = inSampleSize
+                            this.inPreferredConfig = Bitmap.Config.RGB_565
+                        }
+                val originalBitmap =
+                        BitmapFactory.decodeFile(path, decodeOptions)
+                                ?: throw Exception("Failed to decode image")
+
+                val scaleDivisor = inSampleSize.toFloat()
+                val scaledX = (x / scaleDivisor).roundToInt().coerceAtLeast(0)
+                val scaledY = (y / scaleDivisor).roundToInt().coerceAtLeast(0)
+                val scaledWidth = (width / scaleDivisor).roundToInt().coerceAtLeast(1)
+                val scaledHeight = (height / scaleDivisor).roundToInt().coerceAtLeast(1)
 
                 // 2. Read Exif orientation
                 val exif = android.media.ExifInterface(path)
@@ -420,10 +482,10 @@ class FlutterCropCameraPlugin :
 
                 // 6. Validating Crop Coordinates against Transformed Bitmap
                 // Ensure crop area is within bounds
-                val safeX = x.coerceIn(0, transformedBitmap.width - 1)
-                val safeY = y.coerceIn(0, transformedBitmap.height - 1)
-                val safeWidth = width.coerceAtMost(transformedBitmap.width - safeX)
-                val safeHeight = height.coerceAtMost(transformedBitmap.height - safeY)
+                val safeX = scaledX.coerceIn(0, transformedBitmap.width - 1)
+                val safeY = scaledY.coerceIn(0, transformedBitmap.height - 1)
+                val safeWidth = scaledWidth.coerceAtMost(transformedBitmap.width - safeX)
+                val safeHeight = scaledHeight.coerceAtMost(transformedBitmap.height - safeY)
 
                 if (safeWidth <= 0 || safeHeight <= 0) {
                     Handler(Looper.getMainLooper()).post {
@@ -441,11 +503,14 @@ class FlutterCropCameraPlugin :
                         Bitmap.createBitmap(transformedBitmap, safeX, safeY, safeWidth, safeHeight)
 
                 // 8. Save cropped image
-                val croppedFile =
-                        File(
-                                activity!!.externalCacheDir,
-                                "cropped_${java.util.UUID.randomUUID()}.jpg"
-                        )
+                val croppedDir = context?.cacheDir ?: activity?.cacheDir
+                if (croppedDir == null) {
+                    Handler(Looper.getMainLooper()).post {
+                        result.error("CROP_ERROR", "Cache dir unavailable", null)
+                    }
+                    return@execute
+                }
+                val croppedFile = File(croppedDir, "cropped_${java.util.UUID.randomUUID()}.jpg")
                 val out = FileOutputStream(croppedFile)
                 croppedBitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), out)
                 out.flush()
@@ -563,18 +628,52 @@ class FlutterCropCameraPlugin :
         return false
     }
 
+    override fun onRequestPermissionsResult(
+            requestCode: Int,
+            permissions: Array<out String>,
+            grantResults: IntArray
+    ): Boolean {
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            requestingCameraPermission = false
+            val granted =
+                    grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                val call = pendingStartCall
+                val result = pendingStartResult
+                pendingStartCall = null
+                pendingStartResult = null
+                if (call != null) {
+                    startCamera(call, result)
+                } else {
+                    result?.success(null)
+                }
+            } else {
+                pendingStartResult?.error(
+                        "CAMERA_PERMISSION",
+                        "Camera permission denied",
+                        null
+                )
+                pendingStartCall = null
+                pendingStartResult = null
+            }
+            return true
+        }
+        return false
+    }
+
     private fun copyToTemp(context: Context, uri: android.net.Uri, index: Int): String? {
         return try {
             val inputStream = context.contentResolver.openInputStream(uri) ?: return null
-            val file =
-                    File(
-                            activity!!.externalCacheDir,
-                            "picked_${System.currentTimeMillis()}_$index.jpg"
-                    )
-            val outputStream = FileOutputStream(file)
-            inputStream.copyTo(outputStream)
-            inputStream.close()
-            outputStream.close()
+            val mimeType = context.contentResolver.getType(uri)
+            val ext =
+                    android.webkit.MimeTypeMap.getSingleton()
+                            .getExtensionFromMimeType(mimeType)
+                            ?: "jpg"
+            val dir = context.cacheDir
+            val file = File(dir, "picked_${System.currentTimeMillis()}_$index.$ext")
+            FileOutputStream(file).use { outputStream ->
+                inputStream.use { it.copyTo(outputStream) }
+            }
             file.absolutePath
         } catch (e: Exception) {
             null
@@ -594,10 +693,12 @@ class FlutterCropCameraPlugin :
         activity = binding.activity
         activityBinding = binding
         binding.addActivityResultListener(this)
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
         activityBinding?.removeActivityResultListener(this)
+        activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding = null
         activity = null
     }
@@ -606,10 +707,12 @@ class FlutterCropCameraPlugin :
         activity = binding.activity
         activityBinding = binding
         binding.addActivityResultListener(this)
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivity() {
         activityBinding?.removeActivityResultListener(this)
+        activityBinding?.removeRequestPermissionsResultListener(this)
         activityBinding = null
         activity = null
     }

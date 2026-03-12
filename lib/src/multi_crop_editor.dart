@@ -316,15 +316,51 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
       if (pngBytes == null) throw Exception("Failed to encode image $i");
 
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await _resolveTempDir();
       final File savedFile = File(
         '${tempDir.path}/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png',
       );
       await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
+
+      // On Android, native re-compress can drop overlay content in some builds.
+      // If overlays are present, keep the Flutter-rendered PNG to preserve them.
+      if (Platform.isAndroid && hasOverlays) {
+        return savedFile;
+      }
+
+      // Re-compress the PNG through the native layer to produce a JPEG
+      final String? finalPath = await widget.cropNative(
+        savedFile.path,
+        0,
+        0,
+        cropWidth,
+        cropHeight,
+        0, // no rotation
+        false, // no flip
+      );
+      if (finalPath != null) {
+        final File outFile = File(finalPath);
+        if (outFile.path != savedFile.path) {
+          try {
+            await savedFile.delete();
+          } catch (_) {}
+        }
+        return outFile;
+      }
       return savedFile;
     } catch (e) {
       debugPrint("Error processing image $i: $e");
       return file;
+    }
+  }
+
+  Future<Directory> _resolveTempDir() async {
+    try {
+      return await getTemporaryDirectory();
+    } on MissingPluginException {
+      return Directory.systemTemp;
+    } on PlatformException {
+      return Directory.systemTemp;
     }
   }
 
