@@ -40,6 +40,7 @@ class MultiCropEditor extends StatefulWidget {
 class _MultiCropEditorState extends State<MultiCropEditor> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
+  late List<File> _files;
   late List<CropEditorState> _states;
   bool _isDragging = false;
   EditorMode _mode = EditorMode.ratio; // Current active tab
@@ -47,8 +48,30 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   @override
   void initState() {
     super.initState();
-    _states = List.generate(widget.files.length, (index) => CropEditorState());
+    _files = widget.files.where((f) => f.existsSync()).toList();
+    _states = List.generate(_files.length, (index) => CropEditorState());
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
+
+    final int missingCount = widget.files.length - _files.length;
+    if (missingCount > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "$missingCount image(s) were unavailable and removed from the editor.",
+            ),
+          ),
+        );
+      });
+    }
+
+    if (_files.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.pop(context, <File>[]);
+      });
+    }
   }
 
   @override
@@ -58,17 +81,17 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   }
 
   void _deleteCurrentImage() {
-    if (widget.files.isEmpty) return;
+    if (_files.isEmpty) return;
 
     setState(() {
-      widget.files.removeAt(_currentIndex);
+      _files.removeAt(_currentIndex);
       _states.removeAt(_currentIndex);
 
-      if (widget.files.isEmpty) {
-        Navigator.pop(context, null);
+      if (_files.isEmpty) {
+        Navigator.pop(context, <File>[]);
       } else {
-        if (_currentIndex >= widget.files.length) {
-          _currentIndex = widget.files.length - 1;
+        if (_currentIndex >= _files.length) {
+          _currentIndex = _files.length - 1;
         }
       }
     });
@@ -101,7 +124,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     try {
       final List<Future<File>> processingFutures = [];
 
-      for (int i = 0; i < widget.files.length; i++) {
+      for (int i = 0; i < _files.length; i++) {
         processingFutures.add(_processImage(i));
       }
 
@@ -156,7 +179,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
   Future<File> _processImage(int i) async {
     final state = _states[i];
-    final file = widget.files[i];
+    final file = _files[i];
 
     if (!state.hasChanges) return file;
 
@@ -366,7 +389,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.files.isEmpty) return const SizedBox();
+    if (_files.isEmpty) return const SizedBox();
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
       body: SafeArea(
@@ -404,7 +427,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 physics: _isDragging
                     ? const NeverScrollableScrollPhysics()
                     : const BouncingScrollPhysics(),
-                itemCount: widget.files.length,
+                itemCount: _files.length,
                 onPageChanged: (index) {
                   setState(() {
                     _currentIndex = index;
@@ -412,7 +435,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 },
                 itemBuilder: (context, index) {
                   return _SingleImageEditor(
-                    file: widget.files[index],
+                    file: _files[index],
                     state: _states[index],
                     showGrid: widget.showGrid,
                     onDragStart: () => setState(() => _isDragging = true),
@@ -475,13 +498,13 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                   ],
 
                   // Thumbnails (condensed)
-                  if (widget.files.length > 1) ...[
+                  if (_files.length > 1) ...[
                     const SizedBox(height: 10),
                     SizedBox(
                       height: 40,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
-                        itemCount: widget.files.length,
+                        itemCount: _files.length,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         itemBuilder: (context, index) {
                           final isSelected = index == _currentIndex;
@@ -507,7 +530,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                                   width: 1.5,
                                 ),
                                 image: DecorationImage(
-                                  image: FileImage(widget.files[index]),
+                                  image: FileImage(_files[index]),
                                   fit: BoxFit.cover,
                                   colorFilter: isSelected
                                       ? null
@@ -725,7 +748,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 child: ColorFiltered(
                   colorFilter: filter.colorFilter,
                   child: Image.file(
-                    widget.files[_currentIndex],
+                    _files[_currentIndex],
                     fit: BoxFit.cover,
                   ),
                 ),

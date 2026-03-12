@@ -1,3 +1,9 @@
+## 0.1.8
+* Documentation alignment: updated release notes and README to match 0.1.8 feature set.
+
+## 0.1.7
+* Prevented multi-picker editor from crashing when picked files disappear by filtering missing files and notifying the user.
+
 ## 0.1.6
 * Added Android runtime camera permission handling and documentation.
 
