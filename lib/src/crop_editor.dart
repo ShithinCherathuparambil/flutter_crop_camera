@@ -11,9 +11,11 @@ import 'shared_crop_widgets.dart';
 class CropEditor extends StatefulWidget {
   final File file;
   final Function(File file) onImageSaved;
-  final bool showGrid;
   final bool lockAspectRatio;
   final List<DeviceOrientation> screenOrientations;
+  final EditorFeatureToggles featureToggles;
+  final EditorAppBarStyle appBarStyle;
+  final EditorStyle editorStyle;
 
   final Function(
     String path,
@@ -32,10 +34,12 @@ class CropEditor extends StatefulWidget {
     required this.file,
     required this.onImageSaved,
     required this.cropNative,
-    this.showGrid = true,
     this.lockAspectRatio = false,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
     this.quality = 90,
+    this.featureToggles = const EditorFeatureToggles(),
+    this.appBarStyle = const EditorAppBarStyle(),
+    this.editorStyle = const EditorStyle(),
   });
 
   @override
@@ -64,7 +68,8 @@ class _CropEditorState extends State<CropEditor> {
   @override
   void initState() {
     super.initState();
-    _state.showGrid = widget.showGrid;
+    _state.showGrid = true;
+    _mode = _firstEnabledMode(widget.featureToggles);
     _loadDimensionsAndImage();
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
   }
@@ -128,6 +133,15 @@ class _CropEditorState extends State<CropEditor> {
       _overlays.clear();
       _selectedOverlayId = null;
     });
+  }
+
+  EditorMode _firstEnabledMode(EditorFeatureToggles toggles) {
+    if (toggles.enableCrop) return EditorMode.ratio;
+    if (toggles.enableRotate) return EditorMode.rotate;
+    if (toggles.enableFilter) return EditorMode.filter;
+    if (toggles.enableText) return EditorMode.text;
+    if (toggles.enableSticker) return EditorMode.sticker;
+    return EditorMode.ratio;
   }
 
   void _calculateLayout(BoxConstraints constraints) {
@@ -211,36 +225,42 @@ class _CropEditorState extends State<CropEditor> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Text(
-                    "EDIT IMAGE",
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      letterSpacing: 1.5,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.check, color: Color(0xFFFF5722)),
-                    onPressed: _isSaving ? () {} : _saveImage,
-                  ),
-                ],
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(widget.appBarStyle.height),
+        child: AppBar(
+          title: widget.appBarStyle.title,
+          actions: [
+            IconButton(
+              icon: Icon(
+                widget.appBarStyle.doneIcon,
+                color: widget.appBarStyle.doneIconColor,
               ),
+              onPressed: _isSaving ? () {} : _saveImage,
             ),
-            Expanded(
+          ],
+          leading: IconButton(
+            icon: Icon(
+              widget.appBarStyle.closeIcon,
+              color: widget.appBarStyle.closeIconColor,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+          centerTitle: widget.appBarStyle.centerTitle,
+          elevation: widget.appBarStyle.elevation,
+          backgroundColor: widget.appBarStyle.backgroundColor,
+          shadowColor: widget.appBarStyle.shadowColor,
+          surfaceTintColor: widget.appBarStyle.surfaceTintColor,
+          iconTheme: widget.appBarStyle.iconTheme,
+          toolbarHeight: widget.appBarStyle.height,
+          titleSpacing: widget.appBarStyle.titleSpacing,
+          systemOverlayStyle: widget.appBarStyle.systemOverlayStyle,
+        ),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SafeArea(
+              top: false,
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   _calculateLayout(constraints);
@@ -267,6 +287,7 @@ class _CropEditorState extends State<CropEditor> {
                                 state: _state,
                                 availableSize: Size(baseW, baseH),
                                 showGrid: _state.showGrid || _isDragging,
+                                editorStyle: widget.editorStyle,
                                 onChanged: (rect) {
                                   setState(() {
                                     _state.cropRect = rect;
@@ -317,9 +338,9 @@ class _CropEditorState extends State<CropEditor> {
                 },
               ),
             ),
-            _buildBottomPanel(),
-          ],
-        ),
+          ),
+          _buildBottomPanel(),
+        ],
       ),
     );
   }
@@ -358,7 +379,8 @@ class _CropEditorState extends State<CropEditor> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (_mode == EditorMode.ratio) ...[
+          if (_mode == EditorMode.ratio &&
+              widget.featureToggles.enableCrop) ...[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -374,9 +396,11 @@ class _CropEditorState extends State<CropEditor> {
               ),
             ),
             const SizedBox(height: 10),
-          ] else if (_mode == EditorMode.rotate) ...[
+          ] else if (_mode == EditorMode.rotate &&
+              widget.featureToggles.enableRotate) ...[
             _buildRotationDialArea(),
-          ] else if (_mode == EditorMode.filter) ...[
+          ] else if (_mode == EditorMode.filter &&
+              widget.featureToggles.enableFilter) ...[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -395,68 +419,99 @@ class _CropEditorState extends State<CropEditor> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildTabItem(
-                  Icons.crop,
-                  "Crop",
-                  _mode == EditorMode.ratio,
-                  () => setState(() {
-                    _mode = EditorMode.ratio;
-                    _selectedOverlayId = null;
+                if (widget.featureToggles.enableCrop)
+                  _buildTabItem(
+                    Icons.crop,
+                    "Crop",
+                    _mode == EditorMode.ratio,
+                    () => setState(() {
+                      _mode = EditorMode.ratio;
+                      _selectedOverlayId = null;
+                    }),
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableRotate)
+                  _buildTabItem(
+                    Icons.rotate_90_degrees_ccw_outlined,
+                    "Rotate",
+                    _mode == EditorMode.rotate,
+                    () => setState(() {
+                      _mode = EditorMode.rotate;
+                      _selectedOverlayId = null;
+                    }),
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableFilter)
+                  _buildTabItem(
+                    Icons.filter_vintage_outlined,
+                    "Filter",
+                    _mode == EditorMode.filter,
+                    () => setState(() {
+                      _mode = EditorMode.filter;
+                      _selectedOverlayId = null;
+                    }),
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableText)
+                  _buildTabItem(
+                    Icons.text_fields,
+                    "Text",
+                    _mode == EditorMode.text,
+                    _addText,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableSticker)
+                  _buildTabItem(
+                    Icons.emoji_emotions_outlined,
+                    "Sticker",
+                    _mode == EditorMode.sticker,
+                    _addSticker,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableFlip)
+                  _buildTabItem(Icons.flip, "Flip", false, () {
+                    setState(() {
+                      _state.flipX = !_state.flipX;
+                      _state.hasChanges = true;
+                    });
                   }),
-                ),
-                _buildTabItem(
-                  Icons.rotate_90_degrees_ccw_outlined,
-                  "Rotate",
-                  _mode == EditorMode.rotate,
-                  () => setState(() {
-                    _mode = EditorMode.rotate;
-                    _selectedOverlayId = null;
-                  }),
-                ),
-                _buildTabItem(
-                  Icons.filter_vintage_outlined,
-                  "Filter",
-                  _mode == EditorMode.filter,
-                  () => setState(() {
-                    _mode = EditorMode.filter;
-                    _selectedOverlayId = null;
-                  }),
-                ),
-                _buildTabItem(
-                  Icons.text_fields,
-                  "Text",
-                  _mode == EditorMode.text,
-                  _addText,
-                ),
-                _buildTabItem(
-                  Icons.emoji_emotions_outlined,
-                  "Sticker",
-                  _mode == EditorMode.sticker,
-                  _addSticker,
-                ),
-                _buildTabItem(
-                  _state.showGrid ? Icons.grid_on : Icons.grid_off,
-                  "Grid",
-                  false,
-                  () => setState(() => _state.showGrid = !_state.showGrid),
-                ),
-                _buildTabItem(Icons.flip, "Flip", false, () {
-                  setState(() {
-                    _state.flipX = !_state.flipX;
-                    _state.hasChanges = true;
-                  });
-                }),
-                _buildTabItem(Icons.refresh, "Reset", false, _reset),
-                _buildTabItem(
-                  Icons.delete_outline,
-                  "Delete",
-                  false,
-                  () {
-                    // Simply pop if it's the single editor, or call a specific reset if needed
-                    Navigator.pop(context);
-                  },
-                  color: Colors.redAccent.withValues(alpha: 0.8),
-                ),
+                if (widget.featureToggles.enableReset)
+                  _buildTabItem(
+                    Icons.refresh,
+                    "Reset",
+                    false,
+                    _reset,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableDelete)
+                  _buildTabItem(
+                    Icons.delete_outline,
+                    "Delete",
+                    false,
+                    () {
+                      // Simply pop if it's the single editor, or call a specific reset if needed
+                      Navigator.pop(context);
+                    },
+                    color: Colors.redAccent.withValues(alpha: 0.8),
+                  ),
               ],
             ),
           ),
@@ -468,12 +523,17 @@ class _CropEditorState extends State<CropEditor> {
   Widget _buildTabItem(
     IconData icon,
     String label,
-    bool isSelected,
+    bool selected,
     VoidCallback onTap, {
     Color? color,
+    Color? selectedColor,
+    Color? unselectedColor,
   }) {
-    final activeColor = color ?? const Color(0xFFFF5722);
-    final inactiveColor = Colors.white54;
+    final activeColor =
+        selectedColor ?? widget.editorStyle.bottomNavSelectedItemColor;
+    final inactiveColor =
+        unselectedColor ??
+        (color ?? widget.editorStyle.bottomNavUnSelectedItemColor);
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -481,18 +541,14 @@ class _CropEditorState extends State<CropEditor> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 24,
-            ),
+            Icon(icon, color: selected ? activeColor : inactiveColor, size: 24),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? activeColor : inactiveColor,
+                color: selected ? activeColor : inactiveColor,
                 fontSize: 10,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ],
@@ -506,8 +562,8 @@ class _CropEditorState extends State<CropEditor> {
       children: [
         Text(
           "${(_state.fineRotation * 180 / math.pi).toStringAsFixed(1)}°",
-          style: const TextStyle(
-            color: Color(0xFFFF5722),
+          style: TextStyle(
+            color: widget.editorStyle.bottomNavSelectedItemColor,
             fontSize: 12,
             fontFamily: 'monospace',
             fontWeight: FontWeight.bold,
@@ -518,6 +574,7 @@ class _CropEditorState extends State<CropEditor> {
           height: 60,
           child: RotationDial(
             value: _state.fineRotation,
+            indicatorColor: widget.editorStyle.bottomNavSelectedItemColor,
             onChanged: (val) {
               setState(() {
                 _state.fineRotation = val;
@@ -577,7 +634,10 @@ class _CropEditorState extends State<CropEditor> {
               height: 50,
               decoration: BoxDecoration(
                 border: isSelected
-                    ? Border.all(color: const Color(0xFFFF5722), width: 2)
+                    ? Border.all(
+                        color: widget.editorStyle.bottomNavSelectedItemColor,
+                        width: 2,
+                      )
                     : null,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -593,7 +653,9 @@ class _CropEditorState extends State<CropEditor> {
             Text(
               filter.name,
               style: TextStyle(
-                color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+                color: isSelected
+                    ? widget.editorStyle.bottomNavSelectedItemColor
+                    : Colors.white70,
                 fontSize: 10,
               ),
             ),
@@ -625,17 +687,23 @@ class _CropEditorState extends State<CropEditor> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? const Color(0xFFFF5722).withValues(alpha: 0.1)
+                ? widget.editorStyle.bottomNavSelectedItemColor.withValues(
+                    alpha: 0.1,
+                  )
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? const Color(0xFFFF5722) : Colors.white24,
+              color: isSelected
+                  ? widget.editorStyle.bottomNavSelectedItemColor
+                  : Colors.white24,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+              color: isSelected
+                  ? widget.editorStyle.bottomNavSelectedItemColor
+                  : Colors.white70,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               fontSize: 11,
             ),
@@ -661,11 +729,13 @@ class _CropEditorState extends State<CropEditor> {
             style: const TextStyle(color: Colors.white),
             autofocus: true,
             onChanged: (val) => text = val,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: "Enter text...",
               hintStyle: TextStyle(color: Colors.white54),
               enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFFFF5722)),
+                borderSide: BorderSide(
+                  color: widget.editorStyle.bottomNavSelectedItemColor,
+                ),
               ),
             ),
           ),
@@ -696,9 +766,11 @@ class _CropEditorState extends State<CropEditor> {
                 }
                 Navigator.pop(context);
               },
-              child: const Text(
+              child: Text(
                 "Add",
-                style: TextStyle(color: Color(0xFFFF5722)),
+                style: TextStyle(
+                  color: widget.editorStyle.bottomNavSelectedItemColor,
+                ),
               ),
             ),
           ],

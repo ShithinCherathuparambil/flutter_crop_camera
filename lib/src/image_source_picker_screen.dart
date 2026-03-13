@@ -8,6 +8,7 @@ import 'camera_preview.dart';
 
 import 'crop_editor.dart';
 import 'multi_crop_editor.dart';
+import 'shared_crop_widgets.dart';
 
 /// Enum to specify the preferred camera lens (front or rear).
 enum CamPreference { front, rear }
@@ -32,13 +33,13 @@ class ImageSourcePickerScreen extends StatefulWidget {
   /// final image.
   ///
   /// Defaults to `false`.
-  final bool cropEnabled;
+  final bool enableEdit;
 
   /// **Image Capture Callback (Single Mode)**
   ///
   /// A callback function that is triggered when the final image is ready.
-  /// - If [cropEnabled] is `false`, this returns the raw captured image [File].
-  /// - If [cropEnabled] is `true`, this returns the cropped and processed image [File].
+  /// - If [enableEdit] is `false`, this returns the raw captured image [File].
+  /// - If [enableEdit] is `true`, this returns the cropped and processed image [File].
   ///
   /// Use this callback when [pickerMode] is [PickerMode.single] (default).
   final Function(File)? onImageCaptured;
@@ -92,17 +93,6 @@ class ImageSourcePickerScreen extends StatefulWidget {
   /// Defaults to [CamRatio.ratio3x4].
   final CamRatio aspectRatio;
 
-  /// **Show/Hide Grid**
-  ///
-  /// Controls the visibility of the grid overlay in the **Crop Editor**.
-  ///
-  /// - `true`: Displays a 3x3 rule-of-thirds grid to assist with composition.
-  /// - `false`: Hides the grid for a cleaner view.
-  ///
-  /// Users can toggle this manually in the crop editor UI.
-  /// Defaults to `true`.
-  final bool showGrid;
-
   /// **Lock Aspect Ratio**
   ///
   /// Determines whether the user can change the aspect ratio in the **Crop Editor**.
@@ -127,6 +117,21 @@ class ImageSourcePickerScreen extends StatefulWidget {
   /// Defaults to `[DeviceOrientation.portraitUp]`.
   final List<DeviceOrientation> screenOrientations;
 
+  /// **Editor Feature Toggles**
+  ///
+  /// Enable/disable individual editor tools and tabs.
+  final EditorFeatureToggles featureToggles;
+
+  /// **Editor App Bar Style**
+  ///
+  /// Customize the editor top bar (title, height, colors, icons).
+  final EditorAppBarStyle appBarStyle;
+
+  /// **Editor Style**
+  ///
+  /// Customize the editor UI (handle colors, grid colors, bottom nav colors).
+  final EditorStyle editorStyle;
+
   /// **Image Pickup Source**
   ///
   /// Specifies whether to open the camera or the gallery.
@@ -136,16 +141,18 @@ class ImageSourcePickerScreen extends StatefulWidget {
 
   const ImageSourcePickerScreen({
     super.key,
-    this.cropEnabled = false,
+    this.enableEdit = false,
     this.onImageCaptured,
     this.onImagesCaptured,
     this.pickerMode = PickerMode.single,
     this.quality = 1.0,
     this.initialCamera = CamPreference.rear,
     this.aspectRatio = CamRatio.ratio3x4,
-    this.showGrid = true,
     this.lockAspectRatio = false,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
+    this.featureToggles = const EditorFeatureToggles(),
+    this.appBarStyle = const EditorAppBarStyle(),
+    this.editorStyle = const EditorStyle(),
     this.source = PickSource.camera,
   }) : assert(
          pickerMode == PickerMode.single ? onImageCaptured != null : true,
@@ -396,7 +403,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
         if (path != null) {
           final file = File(path);
           // If cropping is enabled, push the CropEditor screen and wait for result
-          if (widget.cropEnabled) {
+          if (widget.enableEdit) {
             if (!mounted) return;
 
             final croppedFile = await Navigator.push<File?>(
@@ -404,9 +411,11 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
               MaterialPageRoute(
                 builder: (context) => CropEditor(
                   file: file,
-                  showGrid: widget.showGrid,
                   lockAspectRatio: widget.lockAspectRatio,
                   screenOrientations: widget.screenOrientations,
+                  featureToggles: widget.featureToggles,
+                  appBarStyle: widget.appBarStyle,
+                  editorStyle: widget.editorStyle,
                   quality: (widget.quality * 100).toInt(),
                   onImageSaved: (file) {
                     Navigator.pop(context, file);
@@ -450,7 +459,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
         final paths = await _controller.pickImages();
         if (paths.isNotEmpty) {
           final files = paths.map((path) => File(path)).toList();
-          if (widget.cropEnabled) {
+          if (widget.enableEdit) {
             if (!mounted) return;
             // Navigate to MultiCropEditor
             final List<File>? resultFiles = await Navigator.push<List<File>>(
@@ -458,8 +467,10 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
               MaterialPageRoute(
                 builder: (context) => MultiCropEditor(
                   files: files,
-                  showGrid: widget.showGrid,
                   screenOrientations: widget.screenOrientations,
+                  featureToggles: widget.featureToggles,
+                  appBarStyle: widget.appBarStyle,
+                  editorStyle: widget.editorStyle,
                   onImagesCropped: (croppedFiles) {
                     Navigator.pop(context, croppedFiles);
                   },
@@ -519,16 +530,18 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
         final file = File(path);
 
         // 2. If cropping is enabled, push the CropEditor screen.
-        if (widget.cropEnabled) {
+        if (widget.enableEdit) {
           if (!mounted) return;
           final croppedFile = await Navigator.push<File?>(
             context,
             MaterialPageRoute(
               builder: (context) => CropEditor(
                 file: file,
-                showGrid: widget.showGrid,
                 lockAspectRatio: widget.lockAspectRatio,
                 screenOrientations: widget.screenOrientations,
+                featureToggles: widget.featureToggles,
+                appBarStyle: widget.appBarStyle,
+                editorStyle: widget.editorStyle,
                 quality: (widget.quality * 100).toInt(),
                 onImageSaved: (file) {
                   Navigator.pop(context, file);
@@ -591,24 +604,24 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
             top: 0,
             left: 0,
             right: 0,
-            child: SafeArea(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                color: Colors.black.withValues(alpha: 0.3), // Semi-transparent
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      key: const Key('flash_button'),
-                      onTap: _toggleFlash,
-                      child: Icon(_getFlashIcon(), color: Colors.white),
-                    ),
-                    const Spacer(), // To keep flash on left
-                  ],
-                ),
+            child: Container(
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 10,
+                left: 16,
+                right: 16,
+                bottom: 10,
+              ),
+              color: Colors.black.withValues(alpha: 0.3), // Semi-transparent
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  GestureDetector(
+                    key: const Key('flash_button'),
+                    onTap: _toggleFlash,
+                    child: Icon(_getFlashIcon(), color: Colors.white),
+                  ),
+                  const Spacer(), // To keep flash on left
+                ],
               ),
             ),
           ),

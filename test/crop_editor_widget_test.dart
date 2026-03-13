@@ -33,13 +33,12 @@ void main() {
     } catch (_) {}
   });
 
-  Widget buildTestWidget({bool showGrid = true, bool lockAspectRatio = false}) {
+  Widget buildTestWidget({bool lockAspectRatio = false}) {
     return MaterialApp(
       home: CropEditor(
         file: testFile,
         onImageSaved: (file) {},
         cropNative: (path, x, y, width, height, rotation, flipX) async => "",
-        showGrid: showGrid,
         lockAspectRatio: lockAspectRatio,
         screenOrientations: const [], // Empty or any list for test
       ),
@@ -62,9 +61,7 @@ void main() {
     });
 
     testWidgets('accepts different parameters', (tester) async {
-      await tester.pumpWidget(
-        buildTestWidget(showGrid: false, lockAspectRatio: true),
-      );
+      await tester.pumpWidget(buildTestWidget(lockAspectRatio: true));
 
       // Verify the widget builds with different parameters
       expect(find.byType(CropEditor), findsOneWidget);

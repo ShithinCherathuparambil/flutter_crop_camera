@@ -11,8 +11,10 @@ import 'overlays.dart';
 class MultiCropEditor extends StatefulWidget {
   final List<File> files;
   final Function(List<File> files) onImagesCropped;
-  final bool showGrid;
   final List<DeviceOrientation> screenOrientations;
+  final EditorFeatureToggles featureToggles;
+  final EditorAppBarStyle appBarStyle;
+  final EditorStyle editorStyle;
   final Function(
     String path,
     int x,
@@ -29,8 +31,10 @@ class MultiCropEditor extends StatefulWidget {
     required this.files,
     required this.onImagesCropped,
     required this.cropNative,
-    this.showGrid = true,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
+    this.featureToggles = const EditorFeatureToggles(),
+    this.appBarStyle = const EditorAppBarStyle(),
+    this.editorStyle = const EditorStyle(),
   });
 
   @override
@@ -50,6 +54,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     super.initState();
     _files = widget.files.where((f) => f.existsSync()).toList();
     _states = List.generate(_files.length, (index) => CropEditorState());
+    _mode = _firstEnabledMode(widget.featureToggles);
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
 
     final int missingCount = widget.files.length - _files.length;
@@ -109,6 +114,15 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         state.baseSize.height,
       );
     });
+  }
+
+  EditorMode _firstEnabledMode(EditorFeatureToggles toggles) {
+    if (toggles.enableCrop) return EditorMode.ratio;
+    if (toggles.enableRotate) return EditorMode.rotate;
+    if (toggles.enableFilter) return EditorMode.filter;
+    if (toggles.enableText) return EditorMode.text;
+    if (toggles.enableSticker) return EditorMode.sticker;
+    return EditorMode.ratio;
   }
 
   void _onDone() async {
@@ -392,36 +406,42 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     if (_files.isEmpty) return const SizedBox();
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Top Bar
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  Text(
-                    "EDIT IMAGE",
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      letterSpacing: 1.5,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.check, color: Color(0xFFFF5722)),
-                    onPressed: _onDone,
-                  ),
-                ],
+      appBar: PreferredSize(
+        preferredSize: Size.fromHeight(widget.appBarStyle.height),
+        child: AppBar(
+          title: widget.appBarStyle.title,
+          actions: [
+            IconButton(
+              icon: Icon(
+                widget.appBarStyle.doneIcon,
+                color: widget.appBarStyle.doneIconColor,
               ),
+              onPressed: _onDone,
             ),
-            Expanded(
+          ],
+          leading: IconButton(
+            icon: Icon(
+              widget.appBarStyle.closeIcon,
+              color: widget.appBarStyle.closeIconColor,
+            ),
+            onPressed: () => Navigator.pop(context),
+          ),
+          centerTitle: widget.appBarStyle.centerTitle,
+          elevation: widget.appBarStyle.elevation,
+          backgroundColor: widget.appBarStyle.backgroundColor,
+          shadowColor: widget.appBarStyle.shadowColor,
+          surfaceTintColor: widget.appBarStyle.surfaceTintColor,
+          iconTheme: widget.appBarStyle.iconTheme,
+          toolbarHeight: widget.appBarStyle.height,
+          titleSpacing: widget.appBarStyle.titleSpacing,
+          systemOverlayStyle: widget.appBarStyle.systemOverlayStyle,
+        ),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SafeArea(
+              top: false,
               child: PageView.builder(
                 controller: _pageController,
                 physics: _isDragging
@@ -437,197 +457,222 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                   return _SingleImageEditor(
                     file: _files[index],
                     state: _states[index],
-                    showGrid: widget.showGrid,
                     onDragStart: () => setState(() => _isDragging = true),
                     onDragEnd: () => setState(() => _isDragging = false),
+                    editorStyle: widget.editorStyle,
                   );
                 },
               ),
             ),
-            // Bottom Panel
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A0A0A),
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    blurRadius: 20,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.only(top: 16, bottom: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_mode == EditorMode.ratio) ...[
-                    // Ratios
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: [
-                          _buildRatioBtn("FREE", null),
-                          _buildRatioBtn("1:1", 1.0),
-                          _buildRatioBtn("4:5", 4 / 5),
-                          _buildRatioBtn("3:4", 3 / 4),
-                          _buildRatioBtn("16:9", 16 / 9),
-                          _buildRatioBtn("9:16", 9 / 16),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ] else if (_mode == EditorMode.rotate) ...[
-                    // Rotations
-                    _buildRotationDialArea(),
-                  ] else if (_mode == EditorMode.filter) ...[
-                    // Filters
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Row(
-                        children: PresetFilters.list
-                            .map((f) => _buildFilterItem(f))
-                            .toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+          ),
+          // Bottom Panel
+          _buildBottomPanel(),
+        ],
+      ),
+    );
+  }
 
-                  // Thumbnails (condensed)
-                  if (_files.length > 1) ...[
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      height: 40,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _files.length,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemBuilder: (context, index) {
-                          final isSelected = index == _currentIndex;
-                          return GestureDetector(
-                            onTap: () {
-                              _pageController.animateToPage(
-                                index,
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              margin: const EdgeInsets.only(right: 8),
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: isSelected
-                                      ? const Color(0xFFFF5722)
-                                      : Colors.white10,
-                                  width: 1.5,
-                                ),
-                                image: DecorationImage(
-                                  image: FileImage(_files[index]),
-                                  fit: BoxFit.cover,
-                                  colorFilter: isSelected
-                                      ? null
-                                      : ColorFilter.mode(
-                                          Colors.black.withValues(alpha: 0.3),
-                                          BlendMode.multiply,
-                                        ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildTabItem(
-                          Icons.crop,
-                          "Crop",
-                          _mode == EditorMode.ratio,
-                          () => setState(() {
-                            _mode = EditorMode.ratio;
-                            _states[_currentIndex].selectedOverlayId = null;
-                          }),
-                        ),
-                        _buildTabItem(
-                          Icons.rotate_90_degrees_ccw_outlined,
-                          "Rotate",
-                          _mode == EditorMode.rotate,
-                          () => setState(() {
-                            _mode = EditorMode.rotate;
-                            _states[_currentIndex].selectedOverlayId = null;
-                          }),
-                        ),
-                        _buildTabItem(
-                          Icons.filter_vintage_outlined,
-                          "Filter",
-                          _mode == EditorMode.filter,
-                          () => setState(() {
-                            _mode = EditorMode.filter;
-                            _states[_currentIndex].selectedOverlayId = null;
-                          }),
-                        ),
-                        _buildTabItem(
-                          Icons.text_fields,
-                          "Text",
-                          _mode == EditorMode.text,
-                          _addText,
-                        ),
-                        _buildTabItem(
-                          Icons.emoji_emotions_outlined,
-                          "Sticker",
-                          _mode == EditorMode.sticker,
-                          _addSticker,
-                        ),
-                        _buildTabItem(
-                          _states[_currentIndex].showGrid
-                              ? Icons.grid_on
-                              : Icons.grid_off,
-                          "Grid",
-                          false,
-                          () {
-                            setState(() {
-                              _states[_currentIndex].showGrid =
-                                  !_states[_currentIndex].showGrid;
-                            });
-                          },
-                        ),
-                        _buildTabItem(Icons.flip, "Flip", false, () {
-                          setState(() {
-                            _states[_currentIndex].flipX =
-                                !_states[_currentIndex].flipX;
-                            _states[_currentIndex].hasChanges = true;
-                          });
-                        }),
-                        _buildTabItem(Icons.refresh, "Reset", false, _reset),
-                        _buildTabItem(
-                          Icons.delete_outline,
-                          "Delete",
-                          false,
-                          _deleteCurrentImage,
-                          color: Colors.redAccent.withValues(alpha: 0.8),
-                        ),
-                      ],
-                    ),
-                  ),
+  Widget _buildBottomPanel() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0A0A),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 20,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.only(top: 16, bottom: 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_mode == EditorMode.ratio &&
+              widget.featureToggles.enableCrop) ...[
+            // Ratios
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _buildRatioBtn("FREE", null),
+                  _buildRatioBtn("1:1", 1.0),
+                  _buildRatioBtn("4:5", 4 / 5),
+                  _buildRatioBtn("3:4", 3 / 4),
+                  _buildRatioBtn("16:9", 16 / 9),
+                  _buildRatioBtn("9:16", 9 / 16),
                 ],
               ),
             ),
+            const SizedBox(height: 10),
+          ] else if (_mode == EditorMode.rotate &&
+              widget.featureToggles.enableRotate) ...[
+            // Rotations
+            _buildRotationDialArea(),
+          ] else if (_mode == EditorMode.filter &&
+              widget.featureToggles.enableFilter) ...[
+            // Filters
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: PresetFilters.list
+                    .map((f) => _buildFilterItem(f))
+                    .toList(),
+              ),
+            ),
+            const SizedBox(height: 10),
           ],
-        ),
+
+          // Thumbnails (condensed)
+          if (_files.length > 1) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 40,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _files.length,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                itemBuilder: (context, index) {
+                  final isSelected = index == _currentIndex;
+                  return GestureDetector(
+                    onTap: () {
+                      _pageController.animateToPage(
+                        index,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                      );
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      margin: const EdgeInsets.only(right: 8),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isSelected
+                              ? widget.editorStyle.bottomNavSelectedItemColor
+                              : Colors.white10,
+                          width: 1.5,
+                        ),
+                        image: DecorationImage(
+                          image: FileImage(_files[index]),
+                          fit: BoxFit.cover,
+                          colorFilter: isSelected
+                              ? null
+                              : ColorFilter.mode(
+                                  Colors.black.withValues(alpha: 0.3),
+                                  BlendMode.multiply,
+                                ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (widget.featureToggles.enableCrop)
+                  _buildTabItem(
+                    Icons.crop,
+                    "Crop",
+                    _mode == EditorMode.ratio,
+                    () => setState(() {
+                      _mode = EditorMode.ratio;
+                      _states[_currentIndex].selectedOverlayId = null;
+                    }),
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableRotate)
+                  _buildTabItem(
+                    Icons.rotate_90_degrees_ccw_outlined,
+                    "Rotate",
+                    _mode == EditorMode.rotate,
+                    () => setState(() {
+                      _mode = EditorMode.rotate;
+                      _states[_currentIndex].selectedOverlayId = null;
+                    }),
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableFilter)
+                  _buildTabItem(
+                    Icons.filter_vintage_outlined,
+                    "Filter",
+                    _mode == EditorMode.filter,
+                    () => setState(() {
+                      _mode = EditorMode.filter;
+                      _states[_currentIndex].selectedOverlayId = null;
+                    }),
+                  ),
+                if (widget.featureToggles.enableText)
+                  _buildTabItem(
+                    Icons.text_fields,
+                    "Text",
+                    _mode == EditorMode.text,
+                    _addText,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableSticker)
+                  _buildTabItem(
+                    Icons.emoji_emotions_outlined,
+                    "Sticker",
+                    _mode == EditorMode.sticker,
+                    _addSticker,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableFlip)
+                  _buildTabItem(Icons.flip, "Flip", false, () {
+                    setState(() {
+                      _states[_currentIndex].flipX =
+                          !_states[_currentIndex].flipX;
+                      _states[_currentIndex].hasChanges = true;
+                    });
+                  }),
+                if (widget.featureToggles.enableReset)
+                  _buildTabItem(
+                    Icons.refresh,
+                    "Reset",
+                    false,
+                    _reset,
+                    selectedColor:
+                        widget.editorStyle.bottomNavSelectedItemColor,
+                    unselectedColor:
+                        widget.editorStyle.bottomNavUnSelectedItemColor,
+                  ),
+                if (widget.featureToggles.enableDelete)
+                  _buildTabItem(
+                    Icons.delete_outline,
+                    "Delete",
+                    false,
+                    _deleteCurrentImage,
+                    color: Colors.redAccent.withValues(alpha: 0.8),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -635,12 +680,17 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   Widget _buildTabItem(
     IconData icon,
     String label,
-    bool isSelected,
+    bool selected,
     VoidCallback onTap, {
     Color? color,
+    Color? selectedColor,
+    Color? unselectedColor,
   }) {
-    final activeColor = color ?? const Color(0xFFFF5722);
-    final inactiveColor = Colors.white54;
+    final activeColor =
+        selectedColor ?? widget.editorStyle.bottomNavSelectedItemColor;
+    final inactiveColor =
+        unselectedColor ??
+        (color ?? widget.editorStyle.bottomNavUnSelectedItemColor);
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -648,18 +698,14 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? activeColor : inactiveColor,
-              size: 24,
-            ),
+            Icon(icon, color: selected ? activeColor : inactiveColor, size: 24),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
-                color: isSelected ? activeColor : inactiveColor,
+                color: selected ? activeColor : inactiveColor,
                 fontSize: 10,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontWeight: selected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
           ],
@@ -674,8 +720,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       children: [
         Text(
           "${(state.fineRotation * 180 / math.pi).toStringAsFixed(1)}°",
-          style: const TextStyle(
-            color: Color(0xFFFF5722),
+          style: TextStyle(
+            color: widget.editorStyle.bottomNavSelectedItemColor,
             fontSize: 12,
             fontFamily: 'monospace',
             fontWeight: FontWeight.bold,
@@ -686,6 +732,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
           height: 60,
           child: RotationDial(
             value: state.fineRotation,
+            indicatorColor: widget.editorStyle.bottomNavSelectedItemColor,
             onChanged: (val) {
               setState(() {
                 state.fineRotation = val;
@@ -739,7 +786,10 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
               height: 50,
               decoration: BoxDecoration(
                 border: isSelected
-                    ? Border.all(color: const Color(0xFFFF5722), width: 2)
+                    ? Border.all(
+                        color: widget.editorStyle.bottomNavSelectedItemColor,
+                        width: 2,
+                      )
                     : null,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -747,10 +797,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: ColorFiltered(
                   colorFilter: filter.colorFilter,
-                  child: Image.file(
-                    _files[_currentIndex],
-                    fit: BoxFit.cover,
-                  ),
+                  child: Image.file(_files[_currentIndex], fit: BoxFit.cover),
                 ),
               ),
             ),
@@ -758,7 +805,9 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
             Text(
               filter.name,
               style: TextStyle(
-                color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+                color: isSelected
+                    ? widget.editorStyle.bottomNavSelectedItemColor
+                    : Colors.white70,
                 fontSize: 10,
               ),
             ),
@@ -781,11 +830,13 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
             style: const TextStyle(color: Colors.white),
             autofocus: true,
             onChanged: (val) => text = val,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               hintText: "Enter text...",
               hintStyle: TextStyle(color: Colors.white54),
               enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFFFF5722)),
+                borderSide: BorderSide(
+                  color: widget.editorStyle.bottomNavSelectedItemColor,
+                ),
               ),
             ),
           ),
@@ -818,9 +869,11 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 }
                 Navigator.pop(context);
               },
-              child: const Text(
+              child: Text(
                 "Add",
-                style: TextStyle(color: Color(0xFFFF5722)),
+                style: TextStyle(
+                  color: widget.editorStyle.bottomNavSelectedItemColor,
+                ),
               ),
             ),
           ],
@@ -978,17 +1031,23 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: isSelected
-                ? const Color(0xFFFF5722).withValues(alpha: 0.1)
+                ? widget.editorStyle.bottomNavSelectedItemColor.withValues(
+                    alpha: 0.1,
+                  )
                 : Colors.transparent,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? const Color(0xFFFF5722) : Colors.white24,
+              color: isSelected
+                  ? widget.editorStyle.bottomNavSelectedItemColor
+                  : Colors.white24,
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: isSelected ? const Color(0xFFFF5722) : Colors.white70,
+              color: isSelected
+                  ? widget.editorStyle.bottomNavSelectedItemColor
+                  : Colors.white70,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               fontSize: 11,
             ),
@@ -1002,16 +1061,16 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 class _SingleImageEditor extends StatefulWidget {
   final File file;
   final CropEditorState state;
-  final bool showGrid;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
+  final EditorStyle editorStyle;
 
   const _SingleImageEditor({
     required this.file,
     required this.state,
-    required this.showGrid,
     required this.onDragStart,
     required this.onDragEnd,
+    required this.editorStyle,
   });
 
   @override
@@ -1168,6 +1227,7 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
                 state: widget.state,
                 availableSize: Size(baseW, baseH),
                 showGrid: widget.state.showGrid || _isDragging,
+                editorStyle: widget.editorStyle,
                 onChanged: (rect) {
                   setState(() {
                     widget.state.cropRect = rect;

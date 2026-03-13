@@ -4,21 +4,26 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'src/image_source_picker_screen.dart';
+import 'src/shared_crop_widgets.dart';
 
 // Export enums so users can use them
 export 'src/image_source_picker_screen.dart'
     show PickSource, PickerMode, CamPreference, CamRatio;
+export 'src/shared_crop_widgets.dart'
+    show EditorFeatureToggles, EditorAppBarStyle, EditorStyle;
 
 class ImageSourcePicker {
   /// Opens the camera and returns the captured (and optionally cropped) image.
   Future<File?> openCamera({
     required BuildContext context,
-    bool cropEnabled = false,
+    bool enableEdit = false,
     double quality = 1.0,
     CamPreference initialCamera = CamPreference.rear,
     CamRatio aspectRatio = CamRatio.ratio3x4,
-    bool showGrid = true,
     bool lockAspectRatio = false,
+    EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
+    EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
+    EditorStyle editorStyle = const EditorStyle(),
     List<DeviceOrientation> screenOrientations = const [
       DeviceOrientation.portraitUp,
     ],
@@ -26,12 +31,14 @@ class ImageSourcePicker {
     final result = await _pushPicker(
       context,
       source: PickSource.camera,
-      cropEnabled: cropEnabled,
+      enableEdit: enableEdit,
       quality: quality,
       initialCamera: initialCamera,
       aspectRatio: aspectRatio,
-      showGrid: showGrid,
       lockAspectRatio: lockAspectRatio,
+      featureToggles: featureToggles,
+      appBarStyle: appBarStyle,
+      editorStyle: editorStyle,
       screenOrientations: screenOrientations,
       pickerMode: PickerMode.single,
     );
@@ -41,10 +48,12 @@ class ImageSourcePicker {
   /// Opens the gallery to pick a single image.
   Future<File?> pickImage({
     required BuildContext context,
-    bool cropEnabled = false,
+    bool enableEdit = false,
     double quality = 1.0,
-    bool showGrid = true,
     bool lockAspectRatio = false,
+    EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
+    EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
+    EditorStyle editorStyle = const EditorStyle(),
     List<DeviceOrientation> screenOrientations = const [
       DeviceOrientation.portraitUp,
     ],
@@ -52,10 +61,12 @@ class ImageSourcePicker {
     final result = await _pushPicker(
       context,
       source: PickSource.gallery,
-      cropEnabled: cropEnabled,
+      enableEdit: enableEdit,
       quality: quality,
-      showGrid: showGrid,
       lockAspectRatio: lockAspectRatio,
+      featureToggles: featureToggles,
+      appBarStyle: appBarStyle,
+      editorStyle: editorStyle,
       screenOrientations: screenOrientations,
       pickerMode: PickerMode.single,
     );
@@ -65,9 +76,11 @@ class ImageSourcePicker {
   /// Opens the gallery to pick multiple images.
   Future<List<File>> pickMultipleImages({
     required BuildContext context,
-    bool cropEnabled = false,
+    bool enableEdit = false,
     double quality = 1.0,
-    bool showGrid = true,
+    EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
+    EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
+    EditorStyle editorStyle = const EditorStyle(),
     List<DeviceOrientation> screenOrientations = const [
       DeviceOrientation.portraitUp,
     ],
@@ -75,9 +88,11 @@ class ImageSourcePicker {
     final result = await _pushPicker(
       context,
       source: PickSource.gallery,
-      cropEnabled: cropEnabled,
+      enableEdit: enableEdit,
       quality: quality,
-      showGrid: showGrid,
+      featureToggles: featureToggles,
+      appBarStyle: appBarStyle,
+      editorStyle: editorStyle,
       screenOrientations: screenOrientations,
       pickerMode: PickerMode.multiple,
     );
@@ -95,12 +110,14 @@ class ImageSourcePicker {
     BuildContext context, {
     required PickSource source,
     required PickerMode pickerMode,
-    bool cropEnabled = false,
+    bool enableEdit = false,
     double quality = 1.0,
     CamPreference initialCamera = CamPreference.rear,
     CamRatio aspectRatio = CamRatio.ratio3x4,
-    bool showGrid = true,
     bool lockAspectRatio = false,
+    EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
+    EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
+    EditorStyle editorStyle = const EditorStyle(),
     List<DeviceOrientation> screenOrientations = const [
       DeviceOrientation.portraitUp,
     ],
@@ -111,12 +128,14 @@ class ImageSourcePicker {
         builder: (context) => ImageSourcePickerScreen(
           source: source,
           pickerMode: pickerMode,
-          cropEnabled: cropEnabled,
+          enableEdit: enableEdit,
           quality: quality,
           initialCamera: initialCamera,
           aspectRatio: aspectRatio,
-          showGrid: showGrid,
           lockAspectRatio: lockAspectRatio,
+          featureToggles: featureToggles,
+          appBarStyle: appBarStyle,
+          editorStyle: editorStyle,
           screenOrientations: screenOrientations,
           onImageCaptured: (file) {
             Navigator.pop(context, file);

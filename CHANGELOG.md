@@ -1,3 +1,7 @@
+## 0.1.9
+* Added editor UI customization options (app bar style and feature toggles).
+* Renamed `showCropUI` to `enableEdit`.
+
 ## 0.1.8
 * Documentation alignment: updated release notes and README to match 0.1.8 feature set.
 

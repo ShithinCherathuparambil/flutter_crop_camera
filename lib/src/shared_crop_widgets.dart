@@ -1,9 +1,101 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'filters.dart';
 import 'overlays.dart';
 
 enum EditorMode { ratio, rotate, filter, text, sticker }
+
+class EditorFeatureToggles {
+  final bool enableCrop;
+  final bool enableRotate;
+  final bool enableFilter;
+  final bool enableText;
+  final bool enableSticker;
+  final bool enableFlip;
+  final bool enableReset;
+  final bool enableDelete;
+
+  const EditorFeatureToggles({
+    this.enableCrop = true,
+    this.enableRotate = true,
+    this.enableFilter = true,
+    this.enableText = true,
+    this.enableSticker = true,
+    this.enableFlip = true,
+    this.enableReset = true,
+    this.enableDelete = true,
+  });
+}
+
+class EditorAppBarStyle {
+  // Simplified fields
+  final IconData? closeIcon;
+  final IconData? doneIcon;
+  final Color? closeIconColor;
+  final Color? doneIconColor;
+
+  // Standard AppBar properties
+  final Widget title;
+  final bool? centerTitle;
+  final double? elevation;
+  final Color backgroundColor;
+  final Color? shadowColor;
+  final Color? surfaceTintColor;
+  final IconThemeData? iconTheme;
+  final double height; // Mapped to toolbarHeight
+  final double? titleSpacing;
+  final SystemUiOverlayStyle? systemOverlayStyle;
+  final EdgeInsets? padding;
+
+  const EditorAppBarStyle({
+    this.title = const Text(
+      "EDIT IMAGE",
+      style: TextStyle(
+        color: Colors.white70,
+        letterSpacing: 1.5,
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+    this.centerTitle = true,
+    this.elevation,
+    this.backgroundColor = Colors.transparent,
+    this.shadowColor,
+    this.surfaceTintColor,
+    this.iconTheme,
+    this.height = 56,
+    this.titleSpacing,
+    this.systemOverlayStyle,
+    this.padding,
+    this.closeIcon = Icons.close,
+    this.doneIcon = Icons.check,
+    this.closeIconColor = Colors.white,
+    this.doneIconColor = const Color(0xFFFF5722),
+  });
+}
+
+class EditorStyle {
+  final Color cropHandleColor;
+  final double cropHandleSize;
+  final Color cropBorderColor;
+  final double cropBorderWidth;
+  final Color gridColor;
+  final double gridWidth;
+  final Color bottomNavSelectedItemColor;
+  final Color bottomNavUnSelectedItemColor;
+
+  const EditorStyle({
+    this.cropHandleColor = Colors.white,
+    this.cropHandleSize = 10.0,
+    this.cropBorderColor = Colors.white,
+    this.cropBorderWidth = 1.5,
+    this.gridColor = const Color.fromRGBO(255, 255, 255, 0.5),
+    this.gridWidth = 0.5,
+    this.bottomNavSelectedItemColor = const Color(0xFFFF5722),
+    this.bottomNavUnSelectedItemColor = Colors.white70,
+  });
+}
 
 class CropEditorState {
   int rotation = 0;
@@ -35,12 +127,20 @@ class CropEditorState {
 }
 
 class GridPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+
+  GridPainter({
+    this.color = const Color.fromRGBO(255, 255, 255, 0.5),
+    this.strokeWidth = 0.5,
+  });
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.5)
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.5;
+      ..strokeWidth = strokeWidth;
 
     for (int i = 1; i < 3; i++) {
       canvas.drawLine(
@@ -57,14 +157,21 @@ class GridPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant GridPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
 }
 
 class RotationDial extends StatefulWidget {
   final double value;
   final ValueChanged<double> onChanged;
+  final Color indicatorColor;
 
-  const RotationDial({super.key, required this.value, required this.onChanged});
+  const RotationDial({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.indicatorColor = const Color(0xFFFF5722),
+  });
 
   @override
   State<RotationDial> createState() => _RotationDialState();
@@ -106,7 +213,10 @@ class _RotationDialState extends State<RotationDial> {
       },
       child: CustomPaint(
         size: const Size(double.infinity, 60),
-        painter: RotationDialPainter(offset: _dragOffset),
+        painter: RotationDialPainter(
+          offset: _dragOffset,
+          indicatorColor: widget.indicatorColor,
+        ),
       ),
     );
   }
@@ -114,7 +224,8 @@ class _RotationDialState extends State<RotationDial> {
 
 class RotationDialPainter extends CustomPainter {
   final double offset;
-  RotationDialPainter({required this.offset});
+  final Color indicatorColor;
+  RotationDialPainter({required this.offset, required this.indicatorColor});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -145,7 +256,7 @@ class RotationDialPainter extends CustomPainter {
     }
 
     // Indicator
-    paint.color = const Color(0xFFFF5722);
+    paint.color = indicatorColor;
     paint.strokeWidth = 2.0;
     canvas.drawLine(
       Offset(center, size.height / 2 - 25),
@@ -164,6 +275,7 @@ class CropBox extends StatelessWidget {
   final CropEditorState state;
   final Size availableSize;
   final bool showGrid;
+  final EditorStyle editorStyle;
   final Function(Rect) onChanged;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
@@ -174,6 +286,7 @@ class CropBox extends StatelessWidget {
     required this.state,
     required this.availableSize,
     required this.showGrid,
+    this.editorStyle = const EditorStyle(),
     required this.onChanged,
     required this.onDragStart,
     required this.onDragEnd,
@@ -213,13 +326,23 @@ class CropBox extends StatelessWidget {
           // Grid
           if (showGrid)
             Positioned.fill(
-              child: IgnorePointer(child: CustomPaint(painter: GridPainter())),
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: GridPainter(
+                    color: editorStyle.gridColor,
+                    strokeWidth: editorStyle.gridWidth,
+                  ),
+                ),
+              ),
             ),
           // Border
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 1.5),
+                border: Border.all(
+                  color: editorStyle.cropBorderColor,
+                  width: editorStyle.cropBorderWidth,
+                ),
               ),
             ),
           ),
@@ -288,10 +411,10 @@ class CropBox extends StatelessWidget {
             color: Colors.transparent,
             child: Center(
               child: Container(
-                width: 10,
-                height: 10,
+                width: editorStyle.cropHandleSize,
+                height: editorStyle.cropHandleSize,
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: editorStyle.cropHandleColor,
                   shape: BoxShape.circle,
                   boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4)],
                 ),

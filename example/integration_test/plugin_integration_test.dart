@@ -27,8 +27,7 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: ImageSourcePickerScreen(
-              cropEnabled: true,
-              showGrid: true,
+              enableEdit: true,
               onImageCaptured: (file) {
                 imageCaptured = true;
               },

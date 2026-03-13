@@ -36,13 +36,13 @@ void main() {
   });
 
   Widget buildTestWidget({
-    bool cropEnabled = false,
+    bool enableEdit = false,
     Function(dynamic)? onImageCaptured,
   }) {
     return MaterialApp(
       home: ImageSourcePickerScreen(
         onImageCaptured: onImageCaptured ?? (file) {},
-        cropEnabled: cropEnabled,
+        enableEdit: enableEdit,
       ),
     );
   }

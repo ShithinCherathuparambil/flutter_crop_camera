@@ -54,7 +54,7 @@ A high-performance Flutter camera plugin with a fully integrated, Instagram-insp
 - **Free Crop** — Unconstrained freeform cropping.
 - **Rotation** — Rotate the image in **90° steps** both clockwise and counter-clockwise.
 - **Horizontal Flip (Mirror)** — Toggle horizontal mirroring.
-- **Rule-of-Thirds Grid** — Toggleable 3×3 composition guide overlay.
+- **Rule-of-Thirds Grid** — Always-on 3×3 composition guide overlay.
 - **Lock Aspect Ratio** — Optionally hide ratio controls to enforce a fixed crop ratio.
 - **Dedicated Tabs** — Crop and Rotate controls are separated into intuitive `Crop` and `Rotate` tabs.
 
@@ -212,11 +212,10 @@ import 'package:flutter_crop_camera/flutter_crop_camera.dart';
 
 final File? photo = await ImageSourcePicker().openCamera(
   context: context,
-  cropEnabled: true,               // Show the crop editor after capture
+  enableEdit: true,                // Show the crop editor after capture
   initialCamera: CamPreference.rear, // Start with the rear camera
   aspectRatio: CamRatio.ratio3x4,  // Set the viewfinder aspect ratio
   quality: 1.0,                    // Image quality (0.0 – 1.0)
-  showGrid: true,                  // Show rule-of-thirds grid in crop editor
   lockAspectRatio: false,          // Allow the user to change aspect ratio
   screenOrientations: [DeviceOrientation.portraitUp], // Lock orientation
 );
@@ -231,9 +230,8 @@ if (photo != null) {
 ```dart
 final File? image = await ImageSourcePicker().pickImage(
   context: context,
-  cropEnabled: true,
+  enableEdit: true,
   quality: 0.9,
-  showGrid: true,
   lockAspectRatio: false,
   screenOrientations: [DeviceOrientation.portraitUp],
 );
@@ -248,9 +246,8 @@ if (image != null) {
 ```dart
 final List<File> images = await ImageSourcePicker().pickMultipleImages(
   context: context,
-  cropEnabled: true,    // Opens the multi-image crop editor
+  enableEdit: true,     // Opens the multi-image crop editor
   quality: 0.9,
-  showGrid: true,
   screenOrientations: [DeviceOrientation.portraitUp],
 );
 
@@ -272,11 +269,12 @@ The main entry point of the plugin.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `context` | `BuildContext` | *required* | Flutter build context |
-| `cropEnabled` | `bool` | `false` | Show crop editor after capture |
+| `enableEdit` | `bool` | `false` | Show crop editor after capture |
+| `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
+| `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
 | `initialCamera` | `CamPreference` | `.rear` | Starting camera lens |
 | `aspectRatio` | `CamRatio` | `.ratio3x4` | Viewfinder aspect ratio |
-| `showGrid` | `bool` | `true` | Show rule-of-thirds grid in editor |
 | `lockAspectRatio` | `bool` | `false` | Prevent user from changing crop ratio |
 | `screenOrientations` | `List<DeviceOrientation>` | `[portraitUp]` | Allowed screen orientations |
 
@@ -287,9 +285,10 @@ The main entry point of the plugin.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `context` | `BuildContext` | *required* | Flutter build context |
-| `cropEnabled` | `bool` | `false` | Show crop editor after selection |
+| `enableEdit` | `bool` | `false` | Show crop editor after selection |
+| `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
+| `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
-| `showGrid` | `bool` | `true` | Show rule-of-thirds grid in editor |
 | `lockAspectRatio` | `bool` | `false` | Prevent user from changing crop ratio |
 | `screenOrientations` | `List<DeviceOrientation>` | `[portraitUp]` | Allowed screen orientations |
 
@@ -300,12 +299,46 @@ The main entry point of the plugin.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `context` | `BuildContext` | *required* | Flutter build context |
-| `cropEnabled` | `bool` | `false` | Show multi-image crop editor |
+| `enableEdit` | `bool` | `false` | Show multi-image crop editor |
+| `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
+| `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
-| `showGrid` | `bool` | `true` | Show rule-of-thirds grid in editor |
 | `screenOrientations` | `List<DeviceOrientation>` | `[portraitUp]` | Allowed screen orientations |
 
 **Returns:** `Future<List<File>>` — the list of selected (and optionally cropped) images.
+
+---
+
+### Editor Customization
+
+Use these options to customize the editor UI without changing any existing behavior.
+
+#### `EditorFeatureToggles`
+
+```dart
+const EditorFeatureToggles(
+  enableCrop: true,
+  enableRotate: true,
+  enableFilter: true,
+  enableText: true,
+  enableSticker: true,
+  enableFlip: true,
+  enableReset: true,
+  enableDelete: true,
+);
+```
+
+#### `EditorAppBarStyle`
+
+```dart
+const EditorAppBarStyle(
+  title: Text("EDIT IMAGE"),
+  height: 56,
+  backgroundColor: Colors.transparent,
+  closeIcon: Icons.close,
+  doneIcon: Icons.check,
+);
+```
 
 ---
 
@@ -341,6 +374,13 @@ The main entry point of the plugin.
 ---
 
 ## Migration Guide
+
+### 0.1.8 → 0.1.9
+
+- `showCropUI` was renamed to `enableEdit`.
+- New UI customization options:
+  - `featureToggles` to enable/disable editor tabs and tools.
+  - `appBarStyle` to customize the editor top bar.
 
 ### 0.1.x → 0.1.8
 

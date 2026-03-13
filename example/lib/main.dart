@@ -33,10 +33,9 @@ class _HomePageState extends State<HomePage> {
   List<File> _capturedImages = [];
 
   /// User-controlled setting to enable or disable the crop editor step.
-  bool _cropEnabled = true;
+  bool _enableEdit = true;
 
   /// User-controlled setting to toggle the grid in the crop editor.
-  bool _showGrid = true;
 
   /// User-controlled setting to hide/show aspect ratio options in the cropper.
   bool _lockAspectRatio = false;
@@ -51,22 +50,14 @@ class _HomePageState extends State<HomePage> {
           children: [
             SwitchListTile(
               title: const Text("Enable Cropping"),
-              value: _cropEnabled,
+              value: _enableEdit,
               onChanged: (val) {
                 setState(() {
-                  _cropEnabled = val;
+                  _enableEdit = val;
                 });
               },
             ),
-            SwitchListTile(
-              title: const Text("Show Grid in Cropper"),
-              value: _showGrid,
-              onChanged: (val) {
-                setState(() {
-                  _showGrid = val;
-                });
-              },
-            ),
+
             SwitchListTile(
               title: const Text("Lock Aspect Ratio (Show Options)"),
               value: _lockAspectRatio,
@@ -122,12 +113,18 @@ class _HomePageState extends State<HomePage> {
                             // Navigate to camera screen
                             final file = await picker.openCamera(
                               context: context,
-                              cropEnabled: _cropEnabled,
+                              enableEdit: _enableEdit,
                               initialCamera: CamPreference.rear,
                               quality: 1,
                               aspectRatio: CamRatio.ratio3x4,
-                              showGrid: _showGrid,
                               lockAspectRatio: _lockAspectRatio,
+                              editorStyle: const EditorStyle(
+                                cropHandleColor: Colors.greenAccent,
+                                cropHandleSize: 14.0,
+                                cropBorderColor: Colors.green,
+                                gridColor: Colors.white24,
+                                bottomNavSelectedItemColor: Colors.blue,
+                              ),
                               screenOrientations: const [
                                 DeviceOrientation.portraitUp,
                               ],
@@ -185,9 +182,21 @@ class _HomePageState extends State<HomePage> {
                           final ImageSourcePicker picker = ImageSourcePicker();
                           final files = await picker.pickMultipleImages(
                             context: context,
-                            cropEnabled: _cropEnabled,
+                            enableEdit: _enableEdit,
                             quality: 1,
-                            showGrid: _showGrid,
+                            appBarStyle: const EditorAppBarStyle(
+                              title: Text("Multi Crop Editor"),
+                              backgroundColor: Colors.black,
+                            ),
+                            editorStyle: const EditorStyle(
+                              cropHandleColor: Colors.blue,
+                              cropHandleSize: 12.0,
+                              cropBorderColor: Colors.blue,
+                              cropBorderWidth: 1.0,
+                              gridColor: Colors.red,
+                              bottomNavSelectedItemColor: Colors.blue,
+                              bottomNavUnSelectedItemColor: Colors.white54,
+                            ),
                             screenOrientations: const [
                               DeviceOrientation.portraitUp,
                             ],
@@ -214,9 +223,19 @@ class _HomePageState extends State<HomePage> {
                           final ImageSourcePicker picker = ImageSourcePicker();
                           final file = await picker.pickImage(
                             context: context,
-                            cropEnabled: _cropEnabled,
+                            enableEdit: _enableEdit,
+                            appBarStyle: const EditorAppBarStyle(
+                              title: Text("Single Crop Editor"),
+                              backgroundColor: Colors.black,
+                            ),
+                            editorStyle: const EditorStyle(
+                              cropHandleColor: Colors.blueAccent,
+                              cropHandleSize: 10.0,
+                              cropBorderColor: Colors.blue,
+                              gridColor: Colors.blueGrey,
+                              bottomNavSelectedItemColor: Colors.blueAccent,
+                            ),
                             quality: 1,
-                            showGrid: _showGrid,
                             screenOrientations: const [
                               DeviceOrientation.portraitUp,
                             ],
