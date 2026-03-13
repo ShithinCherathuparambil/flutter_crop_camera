@@ -186,7 +186,7 @@ class _HomePageState extends State<HomePage> {
                             quality: 1,
                             appBarStyle: const EditorAppBarStyle(
                               title: Text("Multi Crop Editor"),
-                              backgroundColor: Colors.black,
+                              backgroundColor: Colors.white,
                             ),
                             editorStyle: const EditorStyle(
                               cropHandleColor: Colors.blue,
@@ -226,7 +226,7 @@ class _HomePageState extends State<HomePage> {
                             enableEdit: _enableEdit,
                             appBarStyle: const EditorAppBarStyle(
                               title: Text("Single Crop Editor"),
-                              backgroundColor: Colors.black,
+                              backgroundColor: Colors.white,
                             ),
                             editorStyle: const EditorStyle(
                               cropHandleColor: Colors.blueAccent,
