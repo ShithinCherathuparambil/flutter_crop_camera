@@ -1,6 +1,9 @@
 ## 0.1.9
-* Added editor UI customization options (app bar style and feature toggles).
-* Renamed `showCropUI` to `enableEdit`.
+* Added comprehensive `EditorStyle` customization for crop handles, borders, grid, and navigation item colors.
+* Added `editorStyle` parameter to `openCamera`, `pickImage`, and `pickMultipleImages`.
+* Fixed bug where `EditorStyle` was not propagated to editor widgets from the picker screen.
+* Fixed hardcoded colors in aspect ratio buttons and rotation dial to respect `EditorStyle`.
+* Renamed `showCropUI` to `enableEdit` for better API clarity.
 
 ## 0.1.8
 * Documentation alignment: updated release notes and README to match 0.1.8 feature set.

@@ -100,7 +100,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.1.8
+  flutter_crop_camera: ^0.1.9
 ```
 
 Then run:
@@ -272,6 +272,7 @@ The main entry point of the plugin.
 | `enableEdit` | `bool` | `false` | Show crop editor after capture |
 | `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
 | `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
+| `editorStyle` | `EditorStyle` | `const EditorStyle()` | Customize editor UI colors (handles, borders, etc.) |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
 | `initialCamera` | `CamPreference` | `.rear` | Starting camera lens |
 | `aspectRatio` | `CamRatio` | `.ratio3x4` | Viewfinder aspect ratio |
@@ -288,6 +289,7 @@ The main entry point of the plugin.
 | `enableEdit` | `bool` | `false` | Show crop editor after selection |
 | `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
 | `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
+| `editorStyle` | `EditorStyle` | `const EditorStyle()` | Customize editor UI colors (handles, borders, etc.) |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
 | `lockAspectRatio` | `bool` | `false` | Prevent user from changing crop ratio |
 | `screenOrientations` | `List<DeviceOrientation>` | `[portraitUp]` | Allowed screen orientations |
@@ -302,6 +304,7 @@ The main entry point of the plugin.
 | `enableEdit` | `bool` | `false` | Show multi-image crop editor |
 | `featureToggles` | `EditorFeatureToggles` | `const EditorFeatureToggles()` | Enable/disable editor tabs and tools |
 | `appBarStyle` | `EditorAppBarStyle` | `const EditorAppBarStyle()` | Customize editor top bar |
+| `editorStyle` | `EditorStyle` | `const EditorStyle()` | Customize editor UI colors (handles, borders, etc.) |
 | `quality` | `double` | `1.0` | Image quality `0.0`–`1.0` |
 | `screenOrientations` | `List<DeviceOrientation>` | `[portraitUp]` | Allowed screen orientations |
 
@@ -337,6 +340,21 @@ const EditorAppBarStyle(
   backgroundColor: Colors.transparent,
   closeIcon: Icons.close,
   doneIcon: Icons.check,
+);
+```
+
+#### `EditorStyle`
+
+```dart
+const EditorStyle(
+  cropHandleColor: Color(0xFFFF5722),
+  cropHandleSize: 12.0,
+  cropBorderColor: Colors.white,
+  cropBorderWidth: 1.0,
+  gridColor: Colors.white70,
+  gridWidth: 0.5,
+  bottomNavSelectedItemColor: Color(0xFFFF5722),
+  bottomNavUnSelectedItemColor: Colors.white54,
 );
 ```
 
@@ -381,10 +399,11 @@ const EditorAppBarStyle(
 - New UI customization options:
   - `featureToggles` to enable/disable editor tabs and tools.
   - `appBarStyle` to customize the editor top bar.
+  - `editorStyle` to customize handles, borders, and navigation colors.
 
-### 0.1.x → 0.1.8
+### 0.1.x → 0.1.9
 
-Version `0.1.8` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
+Version `0.1.9` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
 
 - Photo **Filters** (8 presets) now appear as a tab in the crop editor.
 - **Text and Emoji Sticker overlays** can be added in the crop editor.
@@ -392,7 +411,7 @@ Version `0.1.8` is largely backward compatible with `0.1.x`. The `ImageSourcePic
 - Multi-image editor now has full feature parity with the single-image editor.
 - Internal **Canvas-based image baking pipeline** for correctly merging filters, overlays, and rotation into the output file.
 
-No code changes are required to upgrade from `0.1.x` to `0.1.8`.
+No code changes are required to upgrade from `0.1.x` to `0.1.9`.
 
 ---
 
