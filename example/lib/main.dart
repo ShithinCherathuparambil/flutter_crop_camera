@@ -145,7 +145,8 @@ class _HomePageState extends State<HomePage> {
                       const SizedBox(height: 8),
                 )
               else
-                const Expanded(
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
                   child: Center(child: Text("No images captured")),
                 ),
             ],

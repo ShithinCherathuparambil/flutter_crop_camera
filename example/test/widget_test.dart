@@ -17,8 +17,8 @@ void main() {
     // Verify that the app title is displayed.
     expect(find.text('Flutter Cam Cropper Example'), findsOneWidget);
 
-    // Verify that the "Open Camera" button is present.
-    expect(find.text('Open Camera'), findsOneWidget);
+    // Verify that the "Crop Camera" button is present.
+    expect(find.text('Crop Camera'), findsOneWidget);
 
     // Verify that the crop settings switches are present.
     expect(find.text('Enable Cropping'), findsOneWidget);

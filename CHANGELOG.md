@@ -1,3 +1,8 @@
+## 0.1.11
+* Optimized APK size by removing unused CameraX dependencies (`camera-view` and `camera-extensions`).
+* Fixed layout crash in example app when no images are captured.
+* Updated example widget tests to match current UI.
+
 ## 0.1.10
 * Added comprehensive `EditorStyle` customization for crop handles, borders, grid, and navigation item colors.
 * Fixed bug where `EditorStyle` was not propagated to editor widgets from the picker screen.

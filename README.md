@@ -100,7 +100,7 @@ Add `flutter_crop_camera` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  flutter_crop_camera: ^0.1.10
+  flutter_crop_camera: ^0.1.11
 ```
 
 Then run:
@@ -393,7 +393,7 @@ const EditorStyle(
 
 ## Migration Guide
 
-### 0.1.9 → 10
+### 0.1.10 → 0.1.11
 
 - `showCropUI` was renamed to `enableEdit`.
 - New UI customization options:
@@ -401,9 +401,9 @@ const EditorStyle(
   - `appBarStyle` to customize the editor top bar.
   - `editorStyle` to customize handles, borders, and navigation colors.
 
-### 0.1.x → 0.1.10
+### 0.1.x → 0.1.11
 
-Version `0.1.10` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
+Version `0.1.11` is largely backward compatible with `0.1.x`. The `ImageSourcePicker` API is unchanged. The following features were added:
 
 - Photo **Filters** (8 presets) now appear as a tab in the crop editor.
 - **Text and Emoji Sticker overlays** can be added in the crop editor.
@@ -411,7 +411,7 @@ Version `0.1.10` is largely backward compatible with `0.1.x`. The `ImageSourcePi
 - Multi-image editor now has full feature parity with the single-image editor.
 - Internal **Canvas-based image baking pipeline** for correctly merging filters, overlays, and rotation into the output file.
 
-No code changes are required to upgrade from `0.1.x` to `0.1.10`.
+No code changes are required to upgrade from `0.1.x` to `0.1.11`.
 
 ---
 
