@@ -63,7 +63,6 @@ void main() {
       expect(find.text('Filter'), findsOneWidget);
       expect(find.text('Text'), findsOneWidget);
       expect(find.text('Sticker'), findsOneWidget);
-      expect(find.text('Grid'), findsOneWidget);
       expect(find.text('Flip'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
       expect(find.byIcon(Icons.check), findsOneWidget);

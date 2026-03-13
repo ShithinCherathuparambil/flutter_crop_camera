@@ -1,3 +1,13 @@
+## 0.1.10
+* Added comprehensive `EditorStyle` customization for crop handles, borders, grid, and navigation item colors.
+* Fixed bug where `EditorStyle` was not propagated to editor widgets from the picker screen.
+* Resolved hardcoded colors in aspect ratio buttons and rotation dial to respect `EditorStyle`.
+* Optimized image saving using native-first cropping and parallel processing for multi-image editor.
+* Fixed overlay rendering issues in single-image editor.
+* UI improvements: Moved Save button to top bar and Reset button to bottom navigation bar.
+* Improved iOS camera selection and zoom reliability.
+* Updated documentation for better clarity on permissions and setup.
+
 ## 0.1.9
 * Added comprehensive `EditorStyle` customization for crop handles, borders, grid, and navigation item colors.
 * Added `editorStyle` parameter to `openCamera`, `pickImage`, and `pickMultipleImages`.
