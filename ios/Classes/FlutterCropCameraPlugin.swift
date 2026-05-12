@@ -24,7 +24,7 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
         case "startCamera":
-            startCamera(result: result)
+            startCamera(call: call, result: result)
         case "takePicture":
             takePicture(result: result)
         case "pickImage":
@@ -81,9 +81,27 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
     private var isFrontCamera = false
     private var isMultiPick = false
 
-    func startCamera(result: @escaping FlutterResult) {
+    func startCamera(call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let args = call.arguments as? [String: Any] else {
+            result(FlutterError(code: "INVALID_ARGS", message: "Arguments missing", details: nil))
+            return
+        }
+
+        isFrontCamera = args["frontCamera"] as? Bool ?? false
+        let aspectRatio = args["aspectRatio"] as? String ?? "3:4"
+
         let session = AVCaptureSession()
-        session.sessionPreset = .photo // Changed to photo for better quality and zoom support
+        
+        // Choose preset based on aspect ratio
+        if aspectRatio == "16:9" || aspectRatio == "9:16" {
+            if session.canSetSessionPreset(.hd1920x1080) {
+                session.sessionPreset = .hd1920x1080
+            } else {
+                session.sessionPreset = .photo
+            }
+        } else {
+            session.sessionPreset = .photo
+        }
         
         let device = selectBestCamera(front: isFrontCamera)
         

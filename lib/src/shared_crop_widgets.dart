@@ -6,6 +6,25 @@ import 'overlays.dart';
 
 enum EditorMode { ratio, rotate, filter, text, sticker }
 
+/// Enum to specify supported camera aspect ratios for the viewfinder.
+enum CamRatio { ratio3x4, ratio4x3, ratio9x16, ratio16x9, ratio1x1 }
+
+/// Helper to convert [CamRatio] enum to numerical double values.
+double? getAspectRatioValue(CamRatio ratio) {
+  switch (ratio) {
+    case CamRatio.ratio3x4:
+      return 3 / 4;
+    case CamRatio.ratio4x3:
+      return 4 / 3;
+    case CamRatio.ratio9x16:
+      return 9 / 16;
+    case CamRatio.ratio16x9:
+      return 16 / 9;
+    case CamRatio.ratio1x1:
+      return 1.0;
+  }
+}
+
 class EditorFeatureToggles {
   final bool enableCrop;
   final bool enableRotate;
@@ -279,6 +298,7 @@ class CropBox extends StatelessWidget {
   final Function(Rect) onChanged;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
+  final bool interactive;
 
   const CropBox({
     super.key,
@@ -290,6 +310,7 @@ class CropBox extends StatelessWidget {
     required this.onChanged,
     required this.onDragStart,
     required this.onDragEnd,
+    this.interactive = true,
   });
 
   @override
@@ -324,7 +345,7 @@ class CropBox extends StatelessWidget {
             ),
           ),
           // Grid
-          if (showGrid)
+          if (showGrid && interactive)
             Positioned.fill(
               child: IgnorePointer(
                 child: CustomPaint(
@@ -347,12 +368,13 @@ class CropBox extends StatelessWidget {
             ),
           ),
           // Draggable central area
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onPanStart: (_) => onDragStart(),
-              onPanEnd: (_) => onDragEnd(),
-              onPanUpdate: (details) {
+          if (interactive)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (_) => onDragStart(),
+                onPanEnd: (_) => onDragEnd(),
+                onPanUpdate: (details) {
                 double newLeft = rect.left + details.delta.dx;
                 double newTop = rect.top + details.delta.dy;
 
@@ -372,7 +394,7 @@ class CropBox extends StatelessWidget {
             ),
           ),
           // Handles
-          ..._buildHandles(),
+          if (interactive) ..._buildHandles(),
         ],
       ),
     );

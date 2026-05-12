@@ -15,6 +15,7 @@ class MultiCropEditor extends StatefulWidget {
   final EditorFeatureToggles featureToggles;
   final EditorAppBarStyle appBarStyle;
   final EditorStyle editorStyle;
+  final double? initialAspectRatio;
   final Function(
     String path,
     int x,
@@ -35,6 +36,7 @@ class MultiCropEditor extends StatefulWidget {
     this.featureToggles = const EditorFeatureToggles(),
     this.appBarStyle = const EditorAppBarStyle(),
     this.editorStyle = const EditorStyle(),
+    this.initialAspectRatio,
   });
 
   @override
@@ -53,7 +55,11 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   void initState() {
     super.initState();
     _files = widget.files.where((f) => f.existsSync()).toList();
-    _states = List.generate(_files.length, (index) => CropEditorState());
+    _states = List.generate(_files.length, (index) {
+      final state = CropEditorState();
+      state.aspectRatio = widget.initialAspectRatio;
+      return state;
+    });
     _mode = _firstEnabledMode(widget.featureToggles);
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
 
@@ -460,6 +466,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                     onDragStart: () => setState(() => _isDragging = true),
                     onDragEnd: () => setState(() => _isDragging = false),
                     editorStyle: widget.editorStyle,
+                    interactive: widget.featureToggles.enableCrop &&
+                        _mode == EditorMode.ratio,
                   );
                 },
               ),
@@ -1064,6 +1072,7 @@ class _SingleImageEditor extends StatefulWidget {
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
   final EditorStyle editorStyle;
+  final bool interactive;
 
   const _SingleImageEditor({
     required this.file,
@@ -1071,6 +1080,7 @@ class _SingleImageEditor extends StatefulWidget {
     required this.onDragStart,
     required this.onDragEnd,
     required this.editorStyle,
+    this.interactive = true,
   });
 
   @override
@@ -1228,6 +1238,7 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
                 availableSize: Size(baseW, baseH),
                 showGrid: widget.state.showGrid || _isDragging,
                 editorStyle: widget.editorStyle,
+                interactive: widget.interactive,
                 onChanged: (rect) {
                   setState(() {
                     widget.state.cropRect = rect;

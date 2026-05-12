@@ -8,9 +8,9 @@ import 'src/shared_crop_widgets.dart';
 
 // Export enums so users can use them
 export 'src/image_source_picker_screen.dart'
-    show PickSource, PickerMode, CamPreference, CamRatio;
+    show PickSource, PickerMode, CamPreference;
 export 'src/shared_crop_widgets.dart'
-    show EditorFeatureToggles, EditorAppBarStyle, EditorStyle;
+    show EditorFeatureToggles, EditorAppBarStyle, EditorStyle, CamRatio;
 
 class ImageSourcePicker {
   /// Opens the camera and returns the captured (and optionally cropped) image.

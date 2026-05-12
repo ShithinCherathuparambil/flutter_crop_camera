@@ -52,7 +52,8 @@ class _HomePageState extends State<HomePage> {
   /// User-controlled setting to toggle the grid in the crop editor.
 
   /// User-controlled setting to hide/show aspect ratio options in the cropper.
-  bool _lockAspectRatio = false;
+  final bool _lockAspectRatio = false;
+  bool _isProcessing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -157,77 +158,92 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _pickSingle() async {
-    if (context.mounted) {
-      // Navigate to gallery picker
-      final ImageSourcePicker picker = ImageSourcePicker();
-      final file = await picker.pickImage(
-        context: context,
-        enableEdit: _enableEdit,
-        appBarStyle: const EditorAppBarStyle(
-          title: Text("Single Crop Editor"),
-          backgroundColor: Colors.black,
-        ),
-        editorStyle: const EditorStyle(
-          cropHandleColor: Colors.blueAccent,
-          cropHandleSize: 10.0,
-          cropBorderColor: Colors.blue,
-          gridColor: Colors.blueGrey,
-          bottomNavSelectedItemColor: Colors.blueAccent,
-        ),
-        quality: 1,
-        screenOrientations: const [DeviceOrientation.portraitUp],
-      );
+    if (_isProcessing) return;
+    _isProcessing = true;
+    try {
+      if (context.mounted) {
+        // Navigate to gallery picker
+        final ImageSourcePicker picker = ImageSourcePicker();
+        final file = await picker.pickImage(
+          context: context,
+          enableEdit: _enableEdit,
+          appBarStyle: const EditorAppBarStyle(
+            title: Text("Single Crop Editor"),
+            backgroundColor: Colors.black,
+          ),
+          editorStyle: const EditorStyle(
+            cropHandleColor: Colors.blueAccent,
+            cropHandleSize: 10.0,
+            cropBorderColor: Colors.blue,
+            gridColor: Colors.blueGrey,
+            bottomNavSelectedItemColor: Colors.blueAccent,
+          ),
+          quality: 1,
+          screenOrientations: const [DeviceOrientation.portraitUp],
+        );
 
-      if (file != null) {
-        setState(() {
-          _capturedImages = [file];
-        });
+        if (file != null) {
+          setState(() {
+            _capturedImages = [file];
+          });
+        }
       }
+    } finally {
+      _isProcessing = false;
     }
   }
 
   Future<void> _pickMulti() async {
-    // Navigate to gallery picker
-    final ImageSourcePicker picker = ImageSourcePicker();
-    final files = await picker.pickMultipleImages(
-      context: context,
-      enableEdit: _enableEdit,
-      quality: 1,
-      appBarStyle: const EditorAppBarStyle(
-        title: Text("Multi Crop Editor"),
-        backgroundColor: Colors.black,
-      ),
-      editorStyle: const EditorStyle(
-        cropHandleColor: Colors.blue,
-        cropHandleSize: 12.0,
-        cropBorderColor: Colors.blue,
-        cropBorderWidth: 1.0,
-        gridColor: Colors.red,
-        bottomNavSelectedItemColor: Colors.blue,
-        bottomNavUnSelectedItemColor: Colors.white54,
-      ),
-      screenOrientations: const [DeviceOrientation.portraitUp],
-    );
+    if (_isProcessing) return;
+    _isProcessing = true;
+    try {
+      // Navigate to gallery picker
+      final ImageSourcePicker picker = ImageSourcePicker();
+      final files = await picker.pickMultipleImages(
+        context: context,
+        enableEdit: _enableEdit,
+        quality: 1,
+        appBarStyle: const EditorAppBarStyle(
+          title: Text("Multi Crop Editor"),
+          backgroundColor: Colors.black,
+        ),
+        editorStyle: const EditorStyle(
+          cropHandleColor: Colors.blue,
+          cropHandleSize: 12.0,
+          cropBorderColor: Colors.blue,
+          cropBorderWidth: 1.0,
+          gridColor: Colors.red,
+          bottomNavSelectedItemColor: Colors.blue,
+          bottomNavUnSelectedItemColor: Colors.white54,
+        ),
+        screenOrientations: const [DeviceOrientation.portraitUp],
+      );
 
-    if (files.isNotEmpty) {
-      setState(() {
-        _capturedImages = files;
-      });
+      if (files.isNotEmpty) {
+        setState(() {
+          _capturedImages = files;
+        });
+      }
+    } finally {
+      _isProcessing = false;
     }
   }
 
   Future<void> _openCamera() async {
-    // 1. Check current permission status
-    var status = await Permission.camera.status;
+    if (_isProcessing) return;
+    _isProcessing = true;
+    try {
+      // 1. Check current permission status
+      var status = await Permission.camera.status;
 
-    // 2. If permission is not granted, request it
-    if (!status.isGranted) {
-      status = await Permission.camera.request();
-    }
+      // 2. If permission is not granted, request it
+      if (!status.isGranted) {
+        status = await Permission.camera.request();
+      }
 
-    // 3. Handle the permission result
-    if (status.isGranted) {
-      if (context.mounted) {
+      // 3. Handle the permission result
+      if (status.isGranted) {
+        if (!mounted) return;
         final ImageSourcePicker picker = ImageSourcePicker();
         // Navigate to camera screen
         final file = await picker.openCamera(
@@ -235,7 +251,7 @@ class _HomePageState extends State<HomePage> {
           enableEdit: _enableEdit,
           initialCamera: CamPreference.rear,
           quality: 1,
-          aspectRatio: CamRatio.ratio3x4,
+          aspectRatio: CamRatio.ratio1x1,
           lockAspectRatio: _lockAspectRatio,
           editorStyle: const EditorStyle(
             cropHandleColor: Colors.greenAccent,
@@ -244,6 +260,7 @@ class _HomePageState extends State<HomePage> {
             gridColor: Colors.white24,
             bottomNavSelectedItemColor: Colors.blue,
           ),
+          featureToggles: EditorFeatureToggles(),
           screenOrientations: const [DeviceOrientation.portraitUp],
         );
         log('file - ${file?.path}');
@@ -252,20 +269,18 @@ class _HomePageState extends State<HomePage> {
             _capturedImages = [file];
           });
         }
-      }
-    } else if (status.isDenied) {
-      // Permission denied, but can request again
-      if (context.mounted) {
+      } else if (status.isDenied) {
+        // Permission denied, but can request again
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Camera permission is required to use this feature'),
             duration: Duration(seconds: 3),
           ),
         );
-      }
-    } else if (status.isPermanentlyDenied) {
-      // Permission permanently denied, guide user to settings
-      if (context.mounted) {
+      } else if (status.isPermanentlyDenied) {
+        // Permission permanently denied, guide user to settings
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text(
@@ -281,6 +296,8 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       }
+    } finally {
+      _isProcessing = false;
     }
   }
 }
@@ -335,7 +352,7 @@ class _FeatureCard extends StatelessWidget {
               Text(
                 subtitle,
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withValues(alpha: 0.8),
                   fontSize: 14,
                 ),
               ),

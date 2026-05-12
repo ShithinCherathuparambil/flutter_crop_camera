@@ -16,6 +16,7 @@ class CropEditor extends StatefulWidget {
   final EditorFeatureToggles featureToggles;
   final EditorAppBarStyle appBarStyle;
   final EditorStyle editorStyle;
+  final double? initialAspectRatio;
 
   final Function(
     String path,
@@ -40,6 +41,7 @@ class CropEditor extends StatefulWidget {
     this.featureToggles = const EditorFeatureToggles(),
     this.appBarStyle = const EditorAppBarStyle(),
     this.editorStyle = const EditorStyle(),
+    this.initialAspectRatio,
   });
 
   @override
@@ -69,6 +71,7 @@ class _CropEditorState extends State<CropEditor> {
   void initState() {
     super.initState();
     _state.showGrid = true;
+    _state.aspectRatio = widget.initialAspectRatio;
     _mode = _firstEnabledMode(widget.featureToggles);
     _loadDimensionsAndImage();
     SystemChrome.setPreferredOrientations(widget.screenOrientations);
@@ -282,13 +285,15 @@ class _CropEditorState extends State<CropEditor> {
                                 child: _buildMainContent(baseW, baseH),
                               ),
                               // Crop Box
-                              CropBox(
-                                image: _buildMainContent(baseW, baseH),
-                                state: _state,
-                                availableSize: Size(baseW, baseH),
-                                showGrid: _state.showGrid || _isDragging,
-                                editorStyle: widget.editorStyle,
-                                onChanged: (rect) {
+                                CropBox(
+                                  image: _buildMainContent(baseW, baseH),
+                                  state: _state,
+                                  availableSize: Size(baseW, baseH),
+                                  showGrid: _state.showGrid || _isDragging,
+                                  editorStyle: widget.editorStyle,
+                                  interactive: widget.featureToggles.enableCrop &&
+                                      _mode == EditorMode.ratio,
+                                  onChanged: (rect) {
                                   setState(() {
                                     _state.cropRect = rect;
                                     _state.hasChanges = true;

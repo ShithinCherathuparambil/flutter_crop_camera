@@ -19,8 +19,6 @@ enum PickSource { camera, gallery }
 /// Enum to specify the picker mode (single or multiple).
 enum PickerMode { single, multiple }
 
-/// Enum to specify supported camera aspect ratios for the viewfinder.
-enum CamRatio { ratio3x4, ratio4x3, ratio9x16, ratio16x9, ratio1x1 }
 
 /// [ImageSourcePickerScreen] is the main widget that provides a full-screen camera
 /// experience with optional cropping capability.
@@ -341,18 +339,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
 
   /// Maps [CamRatio] enum to numerical double values for [AspectRatio] widget.
   double _getAspectRatio(CamRatio ratio) {
-    switch (ratio) {
-      case CamRatio.ratio3x4:
-        return 3 / 4;
-      case CamRatio.ratio4x3:
-        return 4 / 3;
-      case CamRatio.ratio9x16:
-        return 9 / 16;
-      case CamRatio.ratio16x9:
-        return 16 / 9;
-      case CamRatio.ratio1x1:
-        return 1.0;
-    }
+    return getAspectRatioValue(ratio) ?? (3 / 4);
   }
 
   @override
@@ -365,11 +352,15 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
     super.dispose();
   }
 
-  /// Compresses [file] to JPEG at [widget.quality] using the native channel.
-  /// If quality is 1.0 (maximum), returns [file] unchanged immediately.
-  /// Uses ImageDescriptor for fast header-only dimension reading.
+  /// Processes [file] by applying auto-crop to [widget.aspectRatio] and
+  /// compressing to JPEG at [widget.quality].
+  /// If no processing is needed, returns [file] unchanged.
   Future<File> _compressIfNeeded(File file) async {
-    if (widget.quality >= 1.0) return file;
+    final double? targetRatio = getAspectRatioValue(widget.aspectRatio);
+
+    // If quality is 1.0 AND no aspect ratio crop is needed, return original
+    if (widget.quality >= 1.0 && targetRatio == null) return file;
+
     try {
       final bytes = await file.readAsBytes();
       final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
@@ -378,25 +369,46 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
       final int h = descriptor.height;
       buffer.dispose();
 
-      final String? compressed = await _controller.cropImage(
+      // Calculate crop rectangle to match aspect ratio
+      int cropX = 0;
+      int cropY = 0;
+      int cropW = w;
+      int cropH = h;
+
+      if (targetRatio != null) {
+        final double imgRatio = w / h;
+        if (imgRatio > targetRatio) {
+          // Image is wider than target ratio: crop width
+          cropW = (h * targetRatio).toInt();
+          cropX = (w - cropW) ~/ 2;
+        } else if (imgRatio < targetRatio) {
+          // Image is taller than target ratio: crop height
+          cropH = (w / targetRatio).toInt();
+          cropY = (h - cropH) ~/ 2;
+        }
+      }
+
+      final String? processed = await _controller.cropImage(
         path: file.path,
-        x: 0,
-        y: 0,
-        width: w,
-        height: h,
+        x: cropX,
+        y: cropY,
+        width: cropW,
+        height: cropH,
         rotationDegrees: 0,
         flipX: false,
         quality: (widget.quality * 100).toInt(),
       );
-      return compressed != null ? File(compressed) : file;
+      return processed != null ? File(processed) : file;
     } catch (e) {
-      debugPrint('_compressIfNeeded error: $e');
+      debugPrint('_processImage error: $e');
       return file;
     }
   }
 
   /// Pick image from gallery
   Future<void> _pickFromGallery() async {
+    if (_isCapturing) return;
+    _isCapturing = true;
     try {
       if (widget.pickerMode == PickerMode.single) {
         final path = await _controller.pickImage();
@@ -416,6 +428,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                   featureToggles: widget.featureToggles,
                   appBarStyle: widget.appBarStyle,
                   editorStyle: widget.editorStyle,
+                  initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
                   quality: (widget.quality * 100).toInt(),
                   onImageSaved: (file) {
                     Navigator.pop(context, file);
@@ -471,6 +484,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                   featureToggles: widget.featureToggles,
                   appBarStyle: widget.appBarStyle,
                   editorStyle: widget.editorStyle,
+                  initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
                   onImagesCropped: (croppedFiles) {
                     Navigator.pop(context, croppedFiles);
                   },
@@ -516,6 +530,8 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
       if (mounted) {
         Navigator.pop(context);
       }
+    } finally {
+      if (mounted) setState(() => _isCapturing = false);
     }
   }
 
@@ -542,6 +558,7 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                 featureToggles: widget.featureToggles,
                 appBarStyle: widget.appBarStyle,
                 editorStyle: widget.editorStyle,
+                initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
                 quality: (widget.quality * 100).toInt(),
                 onImageSaved: (file) {
                   Navigator.pop(context, file);
