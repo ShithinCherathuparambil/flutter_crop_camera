@@ -1,3 +1,7 @@
+## 0.2.1
+* **Fix**: Resolved `switchCamera` method signature mismatch on iOS.
+* **Fix**: Improved aspect ratio persistence when switching cameras or re-initializing.
+
 ## 0.2.0
 * **Major Feature**: Achieved full feature parity between Single Image and Multi-Image cropping editors.
 * **New UI**: Separated Aspect Ratio cropping and Rotation controls into dedicated, intuitive tabs (`Crop` and `Rotate`).

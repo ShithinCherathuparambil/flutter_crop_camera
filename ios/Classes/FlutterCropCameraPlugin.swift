@@ -58,7 +58,7 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
                 result(FlutterError(code: "INVALID_ARGS", message: "Missing zoom argument", details: nil))
             }
         case "switchCamera":
-             switchCamera(result: result)
+             switchCamera(call: call, result: result)
         case "setFlashMode":
             if let args = call.arguments as? [String: Any],
                let mode = args["mode"] as? String {
@@ -80,15 +80,16 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
     private var currentDevice: AVCaptureDevice?
     private var isFrontCamera = false
     private var isMultiPick = false
+    private var lastAspectRatio = "3:4"
 
     func startCamera(call: FlutterMethodCall, result: @escaping FlutterResult) {
-        guard let args = call.arguments as? [String: Any] else {
-            result(FlutterError(code: "INVALID_ARGS", message: "Arguments missing", details: nil))
-            return
-        }
+        let args = call.arguments as? [String: Any]
 
-        isFrontCamera = args["frontCamera"] as? Bool ?? false
-        let aspectRatio = args["aspectRatio"] as? String ?? "3:4"
+        if let front = args?["frontCamera"] as? Bool {
+            isFrontCamera = front
+        }
+        let aspectRatio = args?["aspectRatio"] as? String ?? lastAspectRatio
+        lastAspectRatio = aspectRatio
 
         let session = AVCaptureSession()
         
@@ -172,10 +173,10 @@ public class FlutterCropCameraPlugin: NSObject, FlutterPlugin, UIImagePickerCont
         }
     }
     
-    func switchCamera(result: @escaping FlutterResult) {
+    func switchCamera(call: FlutterMethodCall, result: @escaping FlutterResult) {
         isFrontCamera = !isFrontCamera
         stopCamera()
-        startCamera(result: result)
+        startCamera(call: call, result: result)
     }
     
     func stopCamera() {
