@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_crop_camera'
-  s.version          = '0.0.1'
+  s.version          = '0.2.1'
   s.summary          = 'A high-performance Flutter camera plugin with a built-in crop editor.'
   s.description      = <<-DESC
 A high-performance Flutter camera plugin with a built-in crop editor, supporting custom aspect ratios, zoom, and orientation locking.

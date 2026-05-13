@@ -1,3 +1,7 @@
+## 0.2.2
+* **iOS**: Added support for **Swift Package Manager (SPM)**.
+* **Maintenance**: Synced iOS podspec version and internal structure for better compatibility.
+
 ## 0.2.1
 * **Fix**: Resolved `switchCamera` method signature mismatch on iOS.
 * **Fix**: Improved aspect ratio persistence when switching cameras or re-initializing.
