@@ -1,6 +1,6 @@
 name: flutter_crop_camera
 description: "A high-performance Flutter camera plugin with a built-in crop editor, supporting custom aspect ratios, zoom, and orientation locking."
-version: 0.2.2
+version: 0.3.0
 homepage: https://github.com/ShithinCherathuparambil/flutter_crop_camera
 
 screenshots:
@@ -30,6 +30,9 @@ dependencies:
     sdk: flutter
   path_provider: ^2.1.5
   plugin_platform_interface: ^2.0.2
+  flutter_web_plugins:
+    sdk: flutter
+
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +66,15 @@ flutter:
         pluginClass: FlutterCropCameraPlugin
       ios:
         pluginClass: FlutterCropCameraPlugin
+      web:
+        pluginClass: FlutterCropCameraWeb
+        fileName: lib/flutter_crop_camera_web.dart
+      macos:
+        dartPluginClass: FlutterCropCameraMacOS
+      windows:
+        dartPluginClass: FlutterCropCameraWindows
+      linux:
+        dartPluginClass: FlutterCropCameraLinux
     # -------------------
 
   # To add assets to your plugin package, add an assets section, like this:

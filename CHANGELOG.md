@@ -1,3 +1,8 @@
+## 0.3.0
+* **Multi-Platform Support**: Refactored the plugin to a **Federated Architecture**, enabling support for all 6 Flutter platforms.
+* **Web, MacOS, Windows, Linux**: Added initial (placeholder) implementations for desktop and web.
+* **Architecture**: Migrated to `FlutterCropCameraPlatform` interface for future-proof multi-platform extensions.
+
 ## 0.2.2
 * **iOS**: Added support for **Swift Package Manager (SPM)**.
 * **Maintenance**: Synced iOS podspec version and internal structure for better compatibility.
