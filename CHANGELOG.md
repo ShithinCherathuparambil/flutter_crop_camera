@@ -1,3 +1,6 @@
+## 0.3.1
+* **Fix**: Exported platform-specific implementation classes (`FlutterCropCameraLinux`, etc.) from the main library. This resolves the `Undefined name` compilation errors in `dart_plugin_registrant.dart` for desktop and web platforms.
+
 ## 0.3.0
 * **Multi-Platform Support**: Refactored the plugin to a **Federated Architecture**, enabling support for all 6 Flutter platforms.
 * **Web, MacOS, Windows, Linux**: Added initial (placeholder) implementations for desktop and web.

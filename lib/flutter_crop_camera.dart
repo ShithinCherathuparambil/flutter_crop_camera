@@ -12,6 +12,17 @@ export 'src/image_source_picker_screen.dart'
 export 'src/shared_crop_widgets.dart'
     show EditorFeatureToggles, EditorAppBarStyle, EditorStyle, CamRatio;
 
+// Export core classes
+export 'flutter_crop_camera_platform_interface.dart';
+export 'flutter_crop_camera_controller.dart';
+
+// Export platform implementations for dart_plugin_registrant
+export 'flutter_crop_camera_linux.dart';
+export 'flutter_crop_camera_macos.dart';
+export 'flutter_crop_camera_windows.dart';
+export 'flutter_crop_camera_web_stub.dart'
+    if (dart.library.html) 'flutter_crop_camera_web.dart';
+
 class ImageSourcePicker {
   /// Opens the camera and returns the captured (and optionally cropped) image.
   Future<File?> openCamera({
@@ -50,6 +61,7 @@ class ImageSourcePicker {
     required BuildContext context,
     bool enableEdit = false,
     double quality = 1.0,
+    CamRatio aspectRatio = CamRatio.ratio3x4,
     bool lockAspectRatio = false,
     EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
     EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
@@ -63,6 +75,7 @@ class ImageSourcePicker {
       source: PickSource.gallery,
       enableEdit: enableEdit,
       quality: quality,
+      aspectRatio: aspectRatio,
       lockAspectRatio: lockAspectRatio,
       featureToggles: featureToggles,
       appBarStyle: appBarStyle,
@@ -78,6 +91,7 @@ class ImageSourcePicker {
     required BuildContext context,
     bool enableEdit = false,
     double quality = 1.0,
+    CamRatio aspectRatio = CamRatio.ratio3x4,
     EditorFeatureToggles featureToggles = const EditorFeatureToggles(),
     EditorAppBarStyle appBarStyle = const EditorAppBarStyle(),
     EditorStyle editorStyle = const EditorStyle(),
@@ -90,6 +104,7 @@ class ImageSourcePicker {
       source: PickSource.gallery,
       enableEdit: enableEdit,
       quality: quality,
+      aspectRatio: aspectRatio,
       featureToggles: featureToggles,
       appBarStyle: appBarStyle,
       editorStyle: editorStyle,
