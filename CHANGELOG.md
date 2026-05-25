@@ -1,3 +1,7 @@
+## 0.4.0
+* **Migration**: Migrated to Flutter's built-in Kotlin support and the new Kotlin compiler options DSL.
+* **Dependencies**: Bumped minimum supported Flutter version to `3.44.0` and Dart SDK to `3.12.0`.
+
 ## 0.3.1
 * **Fix**: Exported platform-specific implementation classes (`FlutterCropCameraLinux`, etc.) from the main library. This resolves the `Undefined name` compilation errors in `dart_plugin_registrant.dart` for desktop and web platforms.
 

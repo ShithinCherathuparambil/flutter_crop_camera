@@ -11,11 +11,15 @@ let package = Package(
     products: [
         .library(name: "flutter-crop-camera", targets: ["flutter_crop_camera"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(name: "FlutterFramework", path: "../FlutterFramework")
+    ],
     targets: [
         .target(
             name: "flutter_crop_camera",
-            dependencies: [],
+            dependencies: [
+                .product(name: "FlutterFramework", package: "FlutterFramework")
+            ],
             resources: [
                 .process("Resources")
             ]

@@ -132,8 +132,10 @@ void main() {
       await tester.pump();
       log.clear();
 
-      await tester.tap(find.byKey(const Key('shutter_button')));
-      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('shutter_button')));
+        await Future.delayed(const Duration(milliseconds: 100));
+      });
 
       expect(log.any((call) => call.method == 'takePicture'), isTrue);
       expect(captured, isTrue);

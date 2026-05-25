@@ -1,6 +1,5 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_crop_camera/flutter_crop_camera.dart';
-import 'package:flutter_crop_camera/flutter_crop_camera_controller.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
