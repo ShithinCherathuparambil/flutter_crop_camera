@@ -1,12 +1,13 @@
-import 'dart:io';
+import 'dart:io' as io;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_crop_camera/src/crop_editor.dart';
 
 void main() {
-  late File testFile;
+  late XFile testFile;
 
   setUpAll(() async {
     // Generate a valid 1x1 PNG dynamically
@@ -23,24 +24,27 @@ void main() {
     );
     final Uint8List bytes = byteData!.buffer.asUint8List();
 
-    testFile = File('${Directory.systemTemp.path}/test_crop_editor.png');
-    await testFile.writeAsBytes(bytes);
+    final path = '${io.Directory.systemTemp.path}/test_crop_editor.png';
+    final file = io.File(path);
+    await file.writeAsBytes(bytes);
+    testFile = XFile(file.path);
   });
 
   tearDownAll(() async {
     try {
-      if (await testFile.exists()) await testFile.delete();
+      final f = io.File(testFile.path);
+      if (await f.exists()) await f.delete();
     } catch (_) {}
   });
 
   Widget buildTestWidget({bool lockAspectRatio = false}) {
     return MaterialApp(
       home: CropEditor(
-        file: testFile,
-        onImageSaved: (file) {},
-        cropNative: (path, x, y, width, height, rotation, flipX) async => "",
+        xfile: testFile,
+        onImageSaved: (xfile) {},
+        cropNative: (path, x, y, width, height, rotation, flipX) async => '',
         lockAspectRatio: lockAspectRatio,
-        screenOrientations: const [], // Empty or any list for test
+        screenOrientations: const [],
       ),
     );
   }

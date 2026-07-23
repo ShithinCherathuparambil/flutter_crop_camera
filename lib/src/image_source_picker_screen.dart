@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui' as ui;
+import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../flutter_crop_camera_controller.dart';
 import 'camera_preview.dart';
-
 import 'crop_editor.dart';
 import 'multi_crop_editor.dart';
 import 'shared_crop_widgets.dart';
@@ -36,17 +36,17 @@ class ImageSourcePickerScreen extends StatefulWidget {
   /// **Image Capture Callback (Single Mode)**
   ///
   /// A callback function that is triggered when the final image is ready.
-  /// - If [enableEdit] is `false`, this returns the raw captured image [File].
-  /// - If [enableEdit] is `true`, this returns the cropped and processed image [File].
+  /// - If [enableEdit] is `false`, this returns the raw captured image [XFile].
+  /// - If [enableEdit] is `true`, this returns the cropped and processed image [XFile].
   ///
   /// Use this callback when [pickerMode] is [PickerMode.single] (default).
-  final Function(File)? onImageCaptured;
+  final Function(XFile)? onImageCaptured;
 
   /// **Images Capture Callback (Multiple Mode)**
   ///
   /// A callback function that is triggered when multiple images are selected/cropped.
   /// Use this callback when [pickerMode] is [PickerMode.multiple].
-  final Function(List<File>)? onImagesCaptured;
+  final Function(List<XFile>)? onImagesCaptured;
 
   /// **Picker Mode**
   ///
@@ -199,14 +199,17 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
   @override
   void initState() {
     super.initState();
-    // Start camera (or pick from gallery) when widget is first inserted into the tree.
     if (widget.source == PickSource.camera) {
       _initializeCamera();
     } else {
       _pickFromGallery();
     }
-    // Lock orientation to user preferences.
-    SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    // Lock orientation to user preferences (mobile only — no-op on desktop/web).
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    }
   }
 
   @override
@@ -230,11 +233,14 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
   /// Initializes the native camera with the provided widget configuration.
   Future<void> _initializeCamera() async {
     try {
-      await _controller.startCamera(
+      final tid = await _controller.startCamera(
         quality: widget.quality,
         cameraPreference: widget.initialCamera,
         aspectRatio: widget.aspectRatio,
       );
+      if (tid == null) {
+        throw Exception("No camera device found or failed to start camera.");
+      }
       final double nativeMaxZoom = await _controller.getMaxZoom();
 
       // Restore the user's selected flash mode after (re)initialization.
@@ -251,10 +257,14 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
     } catch (e) {
       debugPrint("Error initializing camera: $e");
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Camera Error: $e")));
-        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Camera not available. Please select from gallery."),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        // Fall back to picking image from gallery automatically if camera is unavailable
+        _pickFromGallery();
       }
     }
   }
@@ -345,51 +355,48 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
   @override
   void dispose() {
     _zoomSliderTimer?.cancel();
-    // Ensure native camera resources are released when widget is destroyed.
     _controller.stopCamera();
-    // Reset orientation settings to allow all orientations for the rest of the app.
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // Reset orientation settings (mobile only — no-op on desktop/web).
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    }
     super.dispose();
   }
 
-  /// Processes [file] by applying auto-crop to [widget.aspectRatio] and
+  /// Processes [xfile] by applying auto-crop to [widget.aspectRatio] and
   /// compressing to JPEG at [widget.quality].
-  /// If no processing is needed, returns [file] unchanged.
-  Future<File> _compressIfNeeded(File file) async {
+  /// If no processing is needed, returns [xfile] unchanged.
+  Future<XFile> _compressIfNeeded(XFile xfile) async {
     final double? targetRatio = getAspectRatioValue(widget.aspectRatio);
 
     // If quality is 1.0 AND no aspect ratio crop is needed, return original
-    if (widget.quality >= 1.0 && targetRatio == null) return file;
+    if (widget.quality >= 1.0 && targetRatio == null) return xfile;
 
     try {
-      final bytes = await file.readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
-      final int w = descriptor.width;
-      final int h = descriptor.height;
-      buffer.dispose();
+      final bytes = await xfile.readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frameInfo = await codec.getNextFrame();
+      final int w = frameInfo.image.width;
+      final int h = frameInfo.image.height;
+      frameInfo.image.dispose();
 
-      // Calculate crop rectangle to match aspect ratio
-      int cropX = 0;
-      int cropY = 0;
-      int cropW = w;
-      int cropH = h;
+      int cropX = 0, cropY = 0, cropW = w, cropH = h;
 
       if (targetRatio != null) {
         final double imgRatio = w / h;
         if (imgRatio > targetRatio) {
-          // Image is wider than target ratio: crop width
           cropW = (h * targetRatio).toInt();
           cropX = (w - cropW) ~/ 2;
         } else if (imgRatio < targetRatio) {
-          // Image is taller than target ratio: crop height
           cropH = (w / targetRatio).toInt();
           cropY = (h - cropH) ~/ 2;
         }
       }
 
       final String? processed = await _controller.cropImage(
-        path: file.path,
+        path: xfile.path,
         x: cropX,
         y: cropY,
         width: cropW,
@@ -398,10 +405,10 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
         flipX: false,
         quality: (widget.quality * 100).toInt(),
       );
-      return processed != null ? File(processed) : file;
+      return processed != null ? XFile(processed) : xfile;
     } catch (e) {
       debugPrint('_processImage error: $e');
-      return file;
+      return xfile;
     }
   }
 
@@ -413,16 +420,14 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
       if (widget.pickerMode == PickerMode.single) {
         final path = await _controller.pickImage();
         if (path != null) {
-          final file = File(path);
-          // If cropping is enabled, push the CropEditor screen and wait for result
+          final xfile = XFile(path);
           if (widget.enableEdit) {
             if (!mounted) return;
-
-            final croppedFile = await Navigator.push<File?>(
+            final croppedFile = await Navigator.push<XFile?>(
               context,
               MaterialPageRoute(
                 builder: (context) => CropEditor(
-                  file: file,
+                  xfile: xfile,
                   lockAspectRatio: widget.lockAspectRatio,
                   screenOrientations: widget.screenOrientations,
                   featureToggles: widget.featureToggles,
@@ -430,106 +435,80 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                   editorStyle: widget.editorStyle,
                   initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
                   quality: (widget.quality * 100).toInt(),
-                  onImageSaved: (file) {
-                    Navigator.pop(context, file);
+                  onImageSaved: (f) {
+                    Navigator.pop(context, f);
                   },
-                  cropNative:
-                      (path, x, y, width, height, rotation, flipX) async {
-                        return await _controller.cropImage(
-                          path: path,
-                          x: x,
-                          y: y,
-                          width: width,
-                          height: height,
-                          rotationDegrees: rotation,
-                          flipX: flipX,
-                          quality: (widget.quality * 100).toInt(),
-                        );
-                      },
+                  cropNative: (path, x, y, width, height, rotation, flipX) async {
+                    return await _controller.cropImage(
+                      path: path,
+                      x: x, y: y, width: width, height: height,
+                      rotationDegrees: rotation, flipX: flipX,
+                      quality: (widget.quality * 100).toInt(),
+                    );
+                  },
                 ),
               ),
             );
-
-            // If we got a result back from CropEditor
             if (croppedFile != null) {
               widget.onImageCaptured?.call(croppedFile);
-              // Controlled via callback return
             } else {
-              // User cancelled cropping
               if (mounted) Navigator.pop(context);
             }
           } else {
-            // No cropping — still apply quality compression if needed
-            widget.onImageCaptured?.call(await _compressIfNeeded(file));
-            // Controlled via callback return
+            widget.onImageCaptured?.call(await _compressIfNeeded(xfile));
           }
         } else {
-          // Path is null (user cancelled picker)
           if (mounted) Navigator.pop(context);
         }
       } else {
         // PickerMode.multiple
         final paths = await _controller.pickImages();
         if (paths.isNotEmpty) {
-          final files = paths.map((path) => File(path)).toList();
+          final xfiles = paths.map((p) => XFile(p)).toList();
           if (widget.enableEdit) {
             if (!mounted) return;
-            // Navigate to MultiCropEditor
-            final List<File>? resultFiles = await Navigator.push<List<File>>(
+            final List<XFile>? resultFiles = await Navigator.push<List<XFile>>(
               context,
               MaterialPageRoute(
                 builder: (context) => MultiCropEditor(
-                  files: files,
+                  xfiles: xfiles,
                   screenOrientations: widget.screenOrientations,
                   featureToggles: widget.featureToggles,
                   appBarStyle: widget.appBarStyle,
                   editorStyle: widget.editorStyle,
                   initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
-                  onImagesCropped: (croppedFiles) {
-                    Navigator.pop(context, croppedFiles);
+                  onImagesCropped: (cropped) {
+                    Navigator.pop(context, cropped);
                   },
-                  cropNative:
-                      (path, x, y, width, height, rotation, flipX) async {
-                        return await _controller.cropImage(
-                          path: path,
-                          x: x,
-                          y: y,
-                          width: width,
-                          height: height,
-                          rotationDegrees: rotation,
-                          flipX: flipX,
-                          quality: (widget.quality * 100).toInt(),
-                        );
-                      },
+                  cropNative: (path, x, y, width, height, rotation, flipX) async {
+                    return await _controller.cropImage(
+                      path: path,
+                      x: x, y: y, width: width, height: height,
+                      rotationDegrees: rotation, flipX: flipX,
+                      quality: (widget.quality * 100).toInt(),
+                    );
+                  },
                 ),
               ),
             );
-
             if (resultFiles != null) {
               widget.onImagesCaptured?.call(resultFiles);
-              // Do NOT pop here, onImagesCaptured handles it.
             } else {
-              // Cancelled
               if (mounted) Navigator.pop(context);
             }
           } else {
-            // No cropping — compress all files at the desired quality
-            final List<File> compressed = await Future.wait(
-              files.map((f) => _compressIfNeeded(f)),
+            final List<XFile> compressed = await Future.wait(
+              xfiles.map((f) => _compressIfNeeded(f)),
             );
             widget.onImagesCaptured?.call(compressed);
-            // Controlled via callback return
           }
         } else {
-          // User cancelled
           if (mounted) Navigator.pop(context);
         }
       }
     } catch (e) {
-      debugPrint("Error picking image: $e");
-      if (mounted) {
-        Navigator.pop(context);
-      }
+      debugPrint('Error picking image: $e');
+      if (mounted) Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
@@ -537,22 +516,19 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
 
   /// Captures the image and either navigates to the crop editor or returns the result.
   Future<void> _capture() async {
-    if (_isCapturing) return; // debounce: ignore rapid consecutive taps
+    if (_isCapturing) return;
     _isCapturing = true;
     try {
-      // 1. Capture the raw image to temporary storage.
       final path = await _controller.takePicture();
       if (path != null) {
-        final file = File(path);
-
-        // 2. If cropping is enabled, push the CropEditor screen.
+        final xfile = XFile(path);
         if (widget.enableEdit) {
           if (!mounted) return;
-          final croppedFile = await Navigator.push<File?>(
+          final croppedFile = await Navigator.push<XFile?>(
             context,
             MaterialPageRoute(
               builder: (context) => CropEditor(
-                file: file,
+                xfile: xfile,
                 lockAspectRatio: widget.lockAspectRatio,
                 screenOrientations: widget.screenOrientations,
                 featureToggles: widget.featureToggles,
@@ -560,37 +536,30 @@ class _ImageSourcePickerScreenState extends State<ImageSourcePickerScreen> {
                 editorStyle: widget.editorStyle,
                 initialAspectRatio: getAspectRatioValue(widget.aspectRatio),
                 quality: (widget.quality * 100).toInt(),
-                onImageSaved: (file) {
-                  Navigator.pop(context, file);
+                onImageSaved: (f) {
+                  Navigator.pop(context, f);
                 },
                 cropNative: (path, x, y, width, height, rotation, flipX) async {
                   return await _controller.cropImage(
                     path: path,
-                    x: x,
-                    y: y,
-                    width: width,
-                    height: height,
-                    rotationDegrees: rotation,
-                    flipX: flipX,
+                    x: x, y: y, width: width, height: height,
+                    rotationDegrees: rotation, flipX: flipX,
                     quality: (widget.quality * 100).toInt(),
                   );
                 },
               ),
             ),
           );
-
           if (croppedFile != null) {
             widget.onImageCaptured?.call(croppedFile);
           }
         } else {
-          // Cropping disabled — still apply quality compression if needed.
-          widget.onImageCaptured?.call(await _compressIfNeeded(file));
+          widget.onImageCaptured?.call(await _compressIfNeeded(xfile));
         }
       }
     } catch (e) {
-      debugPrint("Error capturing: $e");
+      debugPrint('Error capturing: $e');
     } finally {
-      // Always clear the flag so the button works again if the user returns.
       if (mounted) setState(() => _isCapturing = false);
     }
   }

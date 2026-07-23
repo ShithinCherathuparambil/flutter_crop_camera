@@ -1,16 +1,17 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'shared_crop_widgets.dart';
 import 'filters.dart';
 import 'overlays.dart';
+import 'platform_io.dart';
 
 class MultiCropEditor extends StatefulWidget {
-  final List<File> files;
-  final Function(List<File> files) onImagesCropped;
+  final List<XFile> xfiles;
+  final Function(List<XFile> xfiles) onImagesCropped;
   final List<DeviceOrientation> screenOrientations;
   final EditorFeatureToggles featureToggles;
   final EditorAppBarStyle appBarStyle;
@@ -29,7 +30,7 @@ class MultiCropEditor extends StatefulWidget {
 
   const MultiCropEditor({
     super.key,
-    required this.files,
+    required this.xfiles,
     required this.onImagesCropped,
     required this.cropNative,
     this.screenOrientations = const [DeviceOrientation.portraitUp],
@@ -46,7 +47,7 @@ class MultiCropEditor extends StatefulWidget {
 class _MultiCropEditorState extends State<MultiCropEditor> {
   final PageController _pageController = PageController();
   int _currentIndex = 0;
-  late List<File> _files;
+  late List<XFile> _files;
   late List<CropEditorState> _states;
   bool _isDragging = false;
   EditorMode _mode = EditorMode.ratio; // Current active tab
@@ -54,23 +55,28 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
   @override
   void initState() {
     super.initState();
-    _files = widget.files.where((f) => f.existsSync()).toList();
+    // XFile doesn't have existsSync(); keep all files on web, filter on native
+    _files = kIsWeb
+        ? List.from(widget.xfiles)
+        : widget.xfiles.where((f) => _xfileExists(f)).toList();
     _states = List.generate(_files.length, (index) {
       final state = CropEditorState();
       state.aspectRatio = widget.initialAspectRatio;
       return state;
     });
     _mode = _firstEnabledMode(widget.featureToggles);
-    SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    if (!kIsWeb) {
+      SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    }
 
-    final int missingCount = widget.files.length - _files.length;
+    final int missingCount = widget.xfiles.length - _files.length;
     if (missingCount > 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              "$missingCount image(s) were unavailable and removed from the editor.",
+              '$missingCount image(s) were unavailable and removed from the editor.',
             ),
           ),
         );
@@ -80,7 +86,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     if (_files.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        Navigator.pop(context, <File>[]);
+        Navigator.pop(context, <XFile>[]);
       });
     }
   }
@@ -93,13 +99,11 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
   void _deleteCurrentImage() {
     if (_files.isEmpty) return;
-
     setState(() {
       _files.removeAt(_currentIndex);
       _states.removeAt(_currentIndex);
-
       if (_files.isEmpty) {
-        Navigator.pop(context, <File>[]);
+        Navigator.pop(context, <XFile>[]);
       } else {
         if (_currentIndex >= _files.length) {
           _currentIndex = _files.length - 1;
@@ -142,14 +146,11 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     );
 
     try {
-      final List<Future<File>> processingFutures = [];
-
+      final List<Future<XFile>> processingFutures = [];
       for (int i = 0; i < _files.length; i++) {
         processingFutures.add(_processImage(i));
       }
-
-      final List<File> processedFiles = await Future.wait(processingFutures);
-
+      final List<XFile> processedFiles = await Future.wait(processingFutures);
       if (mounted) {
         Navigator.pop(context); // Pop loading dialog
         widget.onImagesCropped(processedFiles);
@@ -197,7 +198,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
     return true;
   }
 
-  Future<File> _processImage(int i) async {
+  Future<XFile> _processImage(int i) async {
     final state = _states[i];
     final file = _files[i];
 
@@ -209,17 +210,12 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 
       if (rect == Rect.zero || base == Size.zero) return file;
 
-      // OPT 1: Use ImageDescriptor to read dimensions without full image decode.
-      // This reads only the image header, ~10x faster for large images.
-      final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
-        await file.readAsBytes(),
-      );
-      final ui.ImageDescriptor descriptor = await ui.ImageDescriptor.encoded(
-        buffer,
-      );
-      final int srcW = descriptor.width;
-      final int srcH = descriptor.height;
-      buffer.dispose();
+      final Uint8List bytes = await file.readAsBytes();
+      final ui.Codec codec = await ui.instantiateImageCodec(bytes);
+      final ui.FrameInfo frameInfo = await codec.getNextFrame();
+      final int srcW = frameInfo.image.width;
+      final int srcH = frameInfo.image.height;
+      frameInfo.image.dispose();
 
       final bool isRotated = state.rotation % 2 != 0;
       final double realImgW = isRotated ? srcH.toDouble() : srcW.toDouble();
@@ -245,7 +241,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         state.flipX,
       );
 
-      if (croppedPath == null) throw Exception("Native crop failed for $i");
+      final String activePath = croppedPath ?? file.path;
 
       final double fineRot = state.fineRotation;
       final bool hasFineRotation = fineRot.abs() > 0.001;
@@ -256,7 +252,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       // Native already produced a correctly cropped+rotated+flipped JPEG.
       // If there's nothing else to apply, return it directly.
       if (!hasFineRotation && !hasFilter && !hasOverlays) {
-        return File(croppedPath);
+        return XFile(activePath);
       }
 
       // SLOW PATH: We have fine rotation, filters, or overlays.
@@ -321,8 +317,8 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
         pictureFinal = recorder.endRecording();
       } else {
         // If NO fine rotation, Native Crop perfectly handled the geometry!
-        final File croppedFile = File(croppedPath);
-        final Uint8List croppedBytes = await croppedFile.readAsBytes();
+        final XFile croppedXFile = XFile(activePath);
+        final Uint8List croppedBytes = await croppedXFile.readAsBytes();
         final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
 
         final Paint paint = Paint()
@@ -357,53 +353,39 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
       );
       imgFinal.dispose();
 
-      if (pngBytes == null) throw Exception("Failed to encode image $i");
+      if (pngBytes == null) throw Exception('Failed to encode image $i');
 
-      final tempDir = await _resolveTempDir();
-      final File savedFile = File(
-        '${tempDir.path}/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      await savedFile.writeAsBytes(pngBytes.buffer.asUint8List());
+      final String tempDir = await resolveTempDirPath();
+      final String savePath = '$tempDir/edited_${i}_${DateTime.now().millisecondsSinceEpoch}.png';
+      await writeBytesToPath(savePath, pngBytes.buffer.asUint8List());
 
-      // On Android, native re-compress can drop overlay content in some builds.
-      // If overlays are present, keep the Flutter-rendered PNG to preserve them.
-      if (Platform.isAndroid && hasOverlays) {
-        return savedFile;
+      // On Android, native re-compress can drop overlay content.
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && hasOverlays) {
+        return XFile(savePath);
       }
 
-      // Re-compress the PNG through the native layer to produce a JPEG
+      // Re-compress through native layer to produce JPEG
       final String? finalPath = await widget.cropNative(
-        savedFile.path,
-        0,
-        0,
-        cropWidth,
-        cropHeight,
-        0, // no rotation
-        false, // no flip
+        savePath, 0, 0, cropWidth, cropHeight, 0, false,
       );
       if (finalPath != null) {
-        final File outFile = File(finalPath);
-        if (outFile.path != savedFile.path) {
-          try {
-            await savedFile.delete();
-          } catch (_) {}
-        }
-        return outFile;
+        if (finalPath != savePath) await deleteFilePath(savePath);
+        return XFile(finalPath);
       }
-      return savedFile;
+      return XFile(savePath);
     } catch (e) {
-      debugPrint("Error processing image $i: $e");
+      debugPrint('Error processing image $i: $e');
       return file;
     }
   }
 
-  Future<Directory> _resolveTempDir() async {
+  bool _xfileExists(XFile xfile) {
     try {
-      return await getTemporaryDirectory();
-    } on MissingPluginException {
-      return Directory.systemTemp;
-    } on PlatformException {
-      return Directory.systemTemp;
+      // On native, XFile.path is a filesystem path
+      // dart:io is safe here since this is native-only
+      return xfile.path.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -567,7 +549,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                           width: 1.5,
                         ),
                         image: DecorationImage(
-                          image: FileImage(_files[index]),
+                          image: buildXFileImageProvider(_files[index]),
                           fit: BoxFit.cover,
                           colorFilter: isSelected
                               ? null
@@ -805,7 +787,10 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: ColorFiltered(
                   colorFilter: filter.colorFilter,
-                  child: Image.file(_files[_currentIndex], fit: BoxFit.cover),
+                  child: Image(
+                    image: buildXFileImageProvider(_files[_currentIndex]),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
             ),
@@ -1067,7 +1052,7 @@ class _MultiCropEditorState extends State<MultiCropEditor> {
 }
 
 class _SingleImageEditor extends StatefulWidget {
-  final File file;
+  final XFile file;
   final CropEditorState state;
   final VoidCallback onDragStart;
   final VoidCallback onDragEnd;
@@ -1142,37 +1127,51 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
   Future<void> _loadImage() async {
     try {
       final data = await widget.file.readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(data);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final codec = await ui.instantiateImageCodec(data);
+      final frame = await codec.getNextFrame();
+      final fullImage = frame.image;
 
-      // Downsample for preview UI (max 1280px)
       const double maxPreviewSize = 1280.0;
       int? targetWidth;
       int? targetHeight;
 
-      if (descriptor.width > maxPreviewSize ||
-          descriptor.height > maxPreviewSize) {
-        if (descriptor.width > descriptor.height) {
+      if (fullImage.width > maxPreviewSize || fullImage.height > maxPreviewSize) {
+        if (fullImage.width > fullImage.height) {
           targetWidth = maxPreviewSize.toInt();
         } else {
           targetHeight = maxPreviewSize.toInt();
         }
       }
 
-      final codec = await descriptor.instantiateCodec(
-        targetWidth: targetWidth,
-        targetHeight: targetHeight,
-      );
-      final frame = await codec.getNextFrame();
-      final image = frame.image;
+      if (targetWidth != null || targetHeight != null) {
+        final resizedCodec = await ui.instantiateImageCodec(
+          data,
+          targetWidth: targetWidth,
+          targetHeight: targetHeight,
+        );
+        final resizedFrame = await resizedCodec.getNextFrame();
+        fullImage.dispose();
+        if (mounted) {
+          setState(() {
+            _image = resizedFrame.image;
+          });
+        } else {
+          resizedFrame.image.dispose();
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _image = fullImage;
+          });
+        } else {
+          fullImage.dispose();
+        }
+      }
 
       if (mounted) {
         setState(() {
-          _image = image;
           _loading = false;
         });
-      } else {
-        image.dispose();
       }
     } catch (e) {
       debugPrint("Error loading image: $e");
@@ -1331,8 +1330,8 @@ class _SingleImageEditorState extends State<_SingleImageEditor>
             angle: _rotationAnimation.value + widget.state.fineRotation,
             child: ColorFiltered(
               colorFilter: widget.state.activeFilter.colorFilter,
-              child: Image.file(
-                widget.file,
+              child: Image(
+                image: buildXFileImageProvider(widget.file),
                 width: w,
                 height: h,
                 fit: BoxFit.fill,

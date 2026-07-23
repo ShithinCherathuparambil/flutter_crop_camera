@@ -9,7 +9,7 @@ class FlutterCropCameraController {
 
   /// Starts the camera on the native platform with the specified configuration.
   /// Returns the texture ID required for the preview.
-  Future<void> startCamera({
+  Future<int?> startCamera({
     double quality = 1.0,
     dynamic cameraPreference, // CamPreference enum
     dynamic aspectRatio, // CamRatio enum
@@ -27,6 +27,7 @@ class FlutterCropCameraController {
       aspectRatio: _getRatioString(aspectRatio),
     );
     textureId = id;
+    return id;
   }
 
   /// Stops the camera and releases all native resources.

@@ -1,4 +1,40 @@
+## 0.6.0
+
+### Full Desktop & Web Production Support
+
+**macOS**
+* **Camera** (new): Full `AVFoundation` live-preview and photo capture via `FlutterTexture` in Swift. Registers `AVCaptureSession` on a background thread; frames are streamed via `AVCaptureVideoDataOutputSampleBufferDelegate` → `copyPixelBuffer`. Works with built-in FaceTime HD camera and external USB webcams.
+* **Gallery** (new): `pickImage` / `pickImages` use `package:file_selector` (native `NSOpenPanel`) — no native Swift code needed.
+* **Crop** (new): Pure-Dart `dart:ui` Canvas pipeline (identical to Web) writes result to temp file.
+* **Switch camera**: Supported via session teardown + restart with toggled `frontCamera` flag.
+* **Zoom / Flash**: Silently no-op (webcams don't expose these APIs).
+* Added `AVFoundation` framework to `flutter_crop_camera.podspec`.
+* Bumped minimum macOS target to `10.15` (Catalina) for full AVFoundation parity.
+
+**Windows**
+* **Camera** (new): C++/WinRT `Windows.Media.Capture.MediaCapture` with `MediaFrameReader` for live BGRA frame streaming into `FlutterDesktopPixelBuffer` texture.
+* **Gallery** (new): `pickImage` / `pickImages` use `package:file_selector` (native `IFileOpenDialog`) in Dart.
+* **Crop** (new): Pure-Dart `dart:ui` Canvas pipeline.
+* **takePicture**: Captures JPEG via `CapturePhotoToStreamAsync`, writes to `%LOCALAPPDATA%\Temp`.
+* **Switch camera**: Cycles device by index from `DeviceInformation::FindAllAsync`.
+* New `windows/` native directory (`CMakeLists.txt`, `flutter_crop_camera_plugin.h/.cpp`, C API shim).
+
+**Linux**
+* **Camera** (new): GStreamer 1.0 pipeline (`v4l2src ! videoconvert ! video/x-raw,format=BGRA ! appsink`) feeding a `FlPixelBufferTexture`.
+* **Gallery** (new): `pickImage` / `pickImages` use `package:file_selector` (native GTK chooser) in Dart.
+* **Crop** (new): Pure-Dart `dart:ui` Canvas pipeline.
+* **takePicture**: Captures current frame buffer and saves as PNG via `GdkPixbuf`.
+* Graceful `MissingPluginException` handling if GStreamer is unavailable at runtime.
+* New `linux/` native directory (`CMakeLists.txt`, `flutter_crop_camera_plugin.h/.cc`).
+
+**All Desktop Platforms**
+* `pubspec.yaml`: Added `dartPluginClass` to macOS & Windows; added `pluginClass` to Linux so native method channels are wired correctly.
+* Fixed `SystemChrome.setPreferredOrientations` guards to only run on Android/iOS — calling it on desktop caused a crash on some configurations.
+* New `lib/src/desktop_crop_utils.dart`: shared pure-Dart crop pipeline for all desktop platforms.
+* New `lib/src/desktop_file_picker.dart`: shared `file_selector` wrapper for all desktop gallery operations.
+
 ## 0.4.0
+
 * **Migration**: Migrated to Flutter's built-in Kotlin support and the new Kotlin compiler options DSL.
 * **Dependencies**: Bumped minimum supported Flutter version to `3.44.0` and Dart SDK to `3.12.0`.
 

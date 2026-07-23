@@ -1,5 +1,5 @@
 import 'dart:developer';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_crop_camera/flutter_crop_camera.dart';
@@ -44,7 +44,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   /// Stores the file references of the images returned by the plugin.
-  List<File> _capturedImages = [];
+  List<XFile> _capturedImages = [];
 
   /// User-controlled setting to enable or disable the crop editor step.
   bool _enableEdit = true;
@@ -134,11 +134,20 @@ class _HomePageState extends State<HomePage> {
                   // ),
                   itemCount: _capturedImages.length,
                   itemBuilder: (context, index) {
+                    final xfile = _capturedImages[index];
                     return ClipRRect(
                       borderRadius: BorderRadius.circular(20),
-                      child: Image.file(
-                        _capturedImages[index],
-                        fit: BoxFit.cover,
+                      child: FutureBuilder<Uint8List>(
+                        future: xfile.readAsBytes(),
+                        builder: (ctx, snap) {
+                          if (snap.hasData && snap.data != null) {
+                            return Image.memory(
+                              snap.data!,
+                              fit: BoxFit.cover,
+                            );
+                          }
+                          return const Center(child: CircularProgressIndicator());
+                        },
                       ),
                     );
                   },
@@ -233,16 +242,46 @@ class _HomePageState extends State<HomePage> {
     if (_isProcessing) return;
     _isProcessing = true;
     try {
-      // 1. Check current permission status
-      var status = await Permission.camera.status;
-
-      // 2. If permission is not granted, request it
-      if (!status.isGranted) {
-        status = await Permission.camera.request();
+      // Check permissions only on mobile platforms (Android / iOS)
+      bool hasPermission = true;
+      if (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.android ||
+              defaultTargetPlatform == TargetPlatform.iOS)) {
+        var status = await Permission.camera.status;
+        if (!status.isGranted) {
+          status = await Permission.camera.request();
+        }
+        if (!status.isGranted) {
+          hasPermission = false;
+          if (status.isDenied) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Camera permission is required to use this feature'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          } else if (status.isPermanentlyDenied) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Camera permission is permanently denied. Please enable it in settings.',
+                ),
+                duration: const Duration(seconds: 5),
+                action: SnackBarAction(
+                  label: 'Open Settings',
+                  onPressed: () {
+                    openAppSettings();
+                  },
+                ),
+              ),
+            );
+          }
+        }
       }
 
-      // 3. Handle the permission result
-      if (status.isGranted) {
+      if (hasPermission) {
         if (!mounted) return;
         final ImageSourcePicker picker = ImageSourcePicker();
         // Navigate to camera screen
@@ -269,32 +308,6 @@ class _HomePageState extends State<HomePage> {
             _capturedImages = [file];
           });
         }
-      } else if (status.isDenied) {
-        // Permission denied, but can request again
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Camera permission is required to use this feature'),
-            duration: Duration(seconds: 3),
-          ),
-        );
-      } else if (status.isPermanentlyDenied) {
-        // Permission permanently denied, guide user to settings
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Camera permission is permanently denied. Please enable it in settings.',
-            ),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Open Settings',
-              onPressed: () {
-                openAppSettings();
-              },
-            ),
-          ),
-        );
       }
     } finally {
       _isProcessing = false;

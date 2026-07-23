@@ -1,13 +1,14 @@
-import 'dart:io';
+import 'dart:io' as io;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_crop_camera/src/multi_crop_editor.dart';
 import 'package:flutter_crop_camera/src/shared_crop_widgets.dart';
 
 void main() {
-  late List<File> testFiles;
+  late List<XFile> testFiles;
 
   setUpAll(() async {
     // Generate a valid 1x1 PNG dynamically
@@ -24,17 +25,18 @@ void main() {
     );
     final Uint8List bytes = byteData!.buffer.asUint8List();
 
-    final file1 = File('${Directory.systemTemp.path}/test_multi_1.png');
-    final file2 = File('${Directory.systemTemp.path}/test_multi_2.png');
-    await file1.writeAsBytes(bytes);
-    await file2.writeAsBytes(bytes);
-    testFiles = [file1, file2];
+    final path1 = '${io.Directory.systemTemp.path}/test_multi_1.png';
+    final path2 = '${io.Directory.systemTemp.path}/test_multi_2.png';
+    await io.File(path1).writeAsBytes(bytes);
+    await io.File(path2).writeAsBytes(bytes);
+    testFiles = [XFile(path1), XFile(path2)];
   });
 
   tearDownAll(() async {
-    for (var file in testFiles) {
+    for (var xfile in testFiles) {
       try {
-        if (await file.exists()) await file.delete();
+        final f = io.File(xfile.path);
+        if (await f.exists()) await f.delete();
       } catch (_) {}
     }
   });
@@ -43,8 +45,8 @@ void main() {
     return MaterialApp(
       theme: ThemeData(useMaterial3: false),
       home: MultiCropEditor(
-        files: testFiles,
-        onImagesCropped: (files) {},
+        xfiles: testFiles,
+        onImagesCropped: (xfiles) {},
         cropNative: (path, x, y, w, h, rot, flip) async {},
       ),
     );

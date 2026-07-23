@@ -1,16 +1,17 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 import 'dart:math' as math;
+import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'filters.dart';
 import 'overlays.dart';
+import 'platform_io.dart';
 import 'shared_crop_widgets.dart';
 
 class CropEditor extends StatefulWidget {
-  final File file;
-  final Function(File file) onImageSaved;
+  final XFile xfile;
+  final Function(XFile xfile) onImageSaved;
   final bool lockAspectRatio;
   final List<DeviceOrientation> screenOrientations;
   final EditorFeatureToggles featureToggles;
@@ -32,7 +33,7 @@ class CropEditor extends StatefulWidget {
 
   const CropEditor({
     super.key,
-    required this.file,
+    required this.xfile,
     required this.onImageSaved,
     required this.cropNative,
     this.lockAspectRatio = false,
@@ -74,17 +75,22 @@ class _CropEditorState extends State<CropEditor> {
     _state.aspectRatio = widget.initialAspectRatio;
     _mode = _firstEnabledMode(widget.featureToggles);
     _loadDimensionsAndImage();
-    SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      SystemChrome.setPreferredOrientations(widget.screenOrientations);
+    }
   }
 
   Future<void> _loadDimensionsAndImage() async {
     try {
-      final data = await widget.file.readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(data);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final data = await widget.xfile.readAsBytes();
+      final codec = await ui.instantiateImageCodec(data);
+      final frame = await codec.getNextFrame();
+      final fullImage = frame.image;
 
-      _imgWidth = descriptor.width;
-      _imgHeight = descriptor.height;
+      _imgWidth = fullImage.width;
+      _imgHeight = fullImage.height;
 
       // Downsample for preview UI (e.g., max 1280px in either dimension)
       const double maxPreviewSize = 1280.0;
@@ -99,23 +105,31 @@ class _CropEditorState extends State<CropEditor> {
         }
       }
 
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
-
-      final codec = await descriptor.instantiateCodec(
-        targetWidth: targetWidth,
-        targetHeight: targetHeight,
-      );
-      final frame = await codec.getNextFrame();
-      if (mounted) {
-        setState(() {
-          _image = frame.image;
-        });
+      if (targetWidth != null || targetHeight != null) {
+        final resizedCodec = await ui.instantiateImageCodec(
+          data,
+          targetWidth: targetWidth,
+          targetHeight: targetHeight,
+        );
+        final resizedFrame = await resizedCodec.getNextFrame();
+        fullImage.dispose();
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _image = resizedFrame.image;
+          });
+        } else {
+          resizedFrame.image.dispose();
+        }
       } else {
-        frame.image.dispose();
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _image = fullImage;
+          });
+        } else {
+          fullImage.dispose();
+        }
       }
     } catch (e) {
       debugPrint("CropEditor: Error loading image: $e");
@@ -360,7 +374,7 @@ class _CropEditorState extends State<CropEditor> {
           angle: _state.rotation * math.pi / 2 + _state.fineRotation,
           child: ColorFiltered(
             colorFilter: _activeFilter.colorFilter,
-            child: Image.file(widget.file, fit: BoxFit.fill),
+            child: Image(image: _buildImageProvider(), fit: BoxFit.fill),
           ),
         ),
       ),
@@ -650,7 +664,7 @@ class _CropEditorState extends State<CropEditor> {
                 borderRadius: BorderRadius.circular(6),
                 child: ColorFiltered(
                   colorFilter: filter.colorFilter,
-                  child: Image.file(widget.file, fit: BoxFit.cover),
+                  child: Image(image: _buildImageProvider(), fit: BoxFit.cover),
                 ),
               ),
             ),
@@ -921,7 +935,7 @@ class _CropEditorState extends State<CropEditor> {
         // FAST PATH: Native crop can perfectly handle base rotation and flip.
         final int rotationDegrees = _state.rotation * 90;
         final String? croppedPath = await widget.cropNative(
-          widget.file.path,
+          widget.xfile.path,
           cropX,
           cropY,
           cropWidth,
@@ -930,17 +944,16 @@ class _CropEditorState extends State<CropEditor> {
           _state.flipX,
         );
 
-        if (croppedPath == null) throw Exception("Native crop failed");
+        final String activePath = croppedPath ?? widget.xfile.path;
 
         if (!hasFilter && !hasOverlays) {
-          final File nativeResult = File(croppedPath);
+          final XFile nativeResult = XFile(activePath);
           if (mounted) widget.onImageSaved(nativeResult);
           return;
         }
 
-        // We have filters or overlays, but native crop handled the geometry safely.
-        final File croppedFile = File(croppedPath);
-        final Uint8List croppedBytes = await croppedFile.readAsBytes();
+        final XFile croppedXFile = XFile(activePath);
+        final Uint8List croppedBytes = await croppedXFile.readAsBytes();
         final ui.Image croppedImage = await decodeImageFromList(croppedBytes);
 
         final ui.PictureRecorder recorder = ui.PictureRecorder();
@@ -975,38 +988,30 @@ class _CropEditorState extends State<CropEditor> {
         );
         imgFinal.dispose();
 
-        if (pngBytes == null) throw Exception("Encode failed");
-        final tempDir = await _resolveTempDir();
-        final pngFile = File(
-          '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
-        );
-        await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
+        if (pngBytes == null) throw Exception('Encode failed');
+        final String tempDir = await _resolveTempDir();
+        final String pngPath = '$tempDir/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png';
+        // Write using bytes directly
+        await _writeBytes(pngPath, pngBytes.buffer.asUint8List());
 
         // On Android, native re-compress can drop overlay content in some builds.
-        // If overlays are present, keep the Flutter-rendered PNG to preserve them.
-        if (Platform.isAndroid && hasOverlays) {
-          if (mounted) widget.onImageSaved(pngFile);
+        if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && hasOverlays) {
+          if (mounted) widget.onImageSaved(XFile(pngPath));
           return;
         }
 
-        // Re-compress the PNG through the native layer to produce a JPEG at the target quality
         final String? finalPath = await widget.cropNative(
-          pngFile.path,
-          0,
-          0,
-          cropWidth,
-          cropHeight,
-          0, // no rotation
-          false, // no flip
+          pngPath,
+          0, 0, cropWidth, cropHeight, 0, false,
         );
-        pngFile.deleteSync(recursive: false);
-        final File savedFile = finalPath != null ? File(finalPath) : pngFile;
+        await _deleteFile(pngPath);
+        final XFile savedFile = finalPath != null ? XFile(finalPath) : XFile(pngPath);
         if (mounted) widget.onImageSaved(savedFile);
         return;
       }
 
-      // SLOW PATH: We have fine rotation, we CANNOT crop FIRST! We must render the whole image.
-      final bytes = await widget.file.readAsBytes();
+      // SLOW PATH: fine rotation — must render whole image
+      final bytes = await widget.xfile.readAsBytes();
       final ui.Image fullImage = await decodeImageFromList(bytes);
 
       final recorderFull = ui.PictureRecorder();
@@ -1068,32 +1073,24 @@ class _CropEditorState extends State<CropEditor> {
       );
       imgFinal.dispose();
 
-      if (pngBytes == null) throw Exception("Encode failed");
-      final tempDir = await _resolveTempDir();
-      final pngFile = File(
-        '${tempDir.path}/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      await pngFile.writeAsBytes(pngBytes.buffer.asUint8List());
+      if (pngBytes == null) throw Exception('Encode failed');
+      final String tempDir = await _resolveTempDir();
+      final String pngPath = '$tempDir/edited_tmp_${DateTime.now().millisecondsSinceEpoch}.png';
+      await _writeBytes(pngPath, pngBytes.buffer.asUint8List());
 
       // On Android, native re-compress can drop overlay content in some builds.
-      // If overlays are present, keep the Flutter-rendered PNG to preserve them.
-      if (Platform.isAndroid && hasOverlays) {
-        if (mounted) widget.onImageSaved(pngFile);
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && hasOverlays) {
+        if (mounted) widget.onImageSaved(XFile(pngPath));
         return;
       }
 
-      // Re-compress the PNG through the native layer to produce a JPEG at the target quality
       final String? finalPath = await widget.cropNative(
-        pngFile.path,
-        0,
-        0,
-        cropWidth,
-        cropHeight,
-        0, // no rotation
-        false, // no flip
+        pngPath, 0, 0, cropWidth, cropHeight, 0, false,
       );
-      pngFile.deleteSync(recursive: false);
-      final File savedFile = finalPath != null ? File(finalPath) : pngFile;
+      if (finalPath != null) {
+        await _deleteFile(pngPath);
+      }
+      final XFile savedFile = finalPath != null ? XFile(finalPath) : XFile(pngPath);
       if (mounted) {
         widget.onImageSaved(savedFile);
       }
@@ -1160,13 +1157,19 @@ class _CropEditorState extends State<CropEditor> {
     canvas.restore();
   }
 
-  Future<Directory> _resolveTempDir() async {
-    try {
-      return await getTemporaryDirectory();
-    } on MissingPluginException {
-      return Directory.systemTemp;
-    } on PlatformException {
-      return Directory.systemTemp;
-    }
+  ImageProvider _buildImageProvider() {
+    return buildXFileImageProvider(widget.xfile);
+  }
+
+  Future<void> _writeBytes(String path, Uint8List bytes) async {
+    await writeBytesToPath(path, bytes);
+  }
+
+  Future<void> _deleteFile(String path) async {
+    await deleteFilePath(path);
+  }
+
+  Future<String> _resolveTempDir() async {
+    return resolveTempDirPath();
   }
 }

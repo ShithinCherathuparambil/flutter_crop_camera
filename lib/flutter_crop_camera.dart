@@ -1,5 +1,4 @@
-import 'dart:io';
-
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -12,20 +11,26 @@ export 'src/image_source_picker_screen.dart'
 export 'src/shared_crop_widgets.dart'
     show EditorFeatureToggles, EditorAppBarStyle, EditorStyle, CamRatio;
 
+// Re-export XFile so callers don't need to import cross_file directly
+export 'package:cross_file/cross_file.dart' show XFile;
+
 // Export core classes
 export 'flutter_crop_camera_platform_interface.dart';
 export 'flutter_crop_camera_controller.dart';
-
-// Export platform implementations for dart_plugin_registrant
 export 'flutter_crop_camera_linux.dart';
 export 'flutter_crop_camera_macos.dart';
 export 'flutter_crop_camera_windows.dart';
+
+// Export platform implementations
+// Web: conditional export prevents dart:io from bleeding onto web
 export 'flutter_crop_camera_web_stub.dart'
-    if (dart.library.html) 'flutter_crop_camera_web.dart';
+    if (dart.library.js_interop) 'flutter_crop_camera_web.dart';
 
 class ImageSourcePicker {
   /// Opens the camera and returns the captured (and optionally cropped) image.
-  Future<File?> openCamera({
+  ///
+  /// Returns an [XFile] on success, or `null` if the user cancelled.
+  Future<XFile?> openCamera({
     required BuildContext context,
     bool enableEdit = false,
     double quality = 1.0,
@@ -53,11 +58,13 @@ class ImageSourcePicker {
       screenOrientations: screenOrientations,
       pickerMode: PickerMode.single,
     );
-    return result is File ? result : null;
+    return result is XFile ? result : null;
   }
 
   /// Opens the gallery to pick a single image.
-  Future<File?> pickImage({
+  ///
+  /// Returns an [XFile] on success, or `null` if the user cancelled.
+  Future<XFile?> pickImage({
     required BuildContext context,
     bool enableEdit = false,
     double quality = 1.0,
@@ -83,11 +90,13 @@ class ImageSourcePicker {
       screenOrientations: screenOrientations,
       pickerMode: PickerMode.single,
     );
-    return result is File ? result : null;
+    return result is XFile ? result : null;
   }
 
   /// Opens the gallery to pick multiple images.
-  Future<List<File>> pickMultipleImages({
+  ///
+  /// Returns a list of [XFile] objects (may be empty if user cancelled).
+  Future<List<XFile>> pickMultipleImages({
     required BuildContext context,
     bool enableEdit = false,
     double quality = 1.0,
@@ -112,11 +121,10 @@ class ImageSourcePicker {
       pickerMode: PickerMode.multiple,
     );
 
-    if (result is List<File>) {
+    if (result is List<XFile>) {
       return result;
     } else if (result is List<dynamic>) {
-      // Safety check if dynamic list returned
-      return result.map((e) => e as File).toList();
+      return result.whereType<XFile>().toList();
     }
     return [];
   }
@@ -152,11 +160,11 @@ class ImageSourcePicker {
           appBarStyle: appBarStyle,
           editorStyle: editorStyle,
           screenOrientations: screenOrientations,
-          onImageCaptured: (file) {
-            Navigator.pop(context, file);
+          onImageCaptured: (xfile) {
+            Navigator.pop(context, xfile);
           },
-          onImagesCaptured: (files) {
-            Navigator.pop(context, files);
+          onImagesCaptured: (xfiles) {
+            Navigator.pop(context, xfiles);
           },
         ),
       ),
