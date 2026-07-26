@@ -35,6 +35,13 @@
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 #include <flutter/texture_registrar.h>
+#include <flutter_plugin_registrar.h>
+
+#ifdef FLUTTER_PLUGIN_IMPL
+#define FLUTTER_PLUGIN_EXPORT __declspec(dllexport)
+#else
+#define FLUTTER_PLUGIN_EXPORT __declspec(dllimport)
+#endif
 
 namespace flutter_crop_camera {
 
@@ -46,17 +53,6 @@ struct CameraPixelBuffer {
 };
 
 /// Windows implementation of the flutter_crop_camera plugin.
-///
-/// Responsibilities:
-///   - startCamera  → enumerate video devices, init MediaCapture, start
-///                    MediaFrameReader, register FlutterDesktopPixelBuffer
-///   - stopCamera   → stop frame reader, close MediaCapture, unregister texture
-///   - switchCamera → cycle to next device index, restart pipeline
-///   - takePicture  → capture to temp JPEG file, return path
-///   - getMaxZoom / setZoom / setFlashMode → no-op / return 1.0
-///
-/// Gallery picking and crop are handled entirely in Dart (file_selector +
-/// dart:ui) so this class has no involvement in those operations.
 class FlutterCropCameraPlugin final : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
@@ -78,13 +74,13 @@ class FlutterCropCameraPlugin final : public flutter::Plugin {
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   // ── Camera operations ─────────────────────────────────────────────────────
-  winrt::Windows::Foundation::IAsyncAction StartCameraAsync(
+  void StartCamera(
       bool prefer_front,
       std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
-  winrt::Windows::Foundation::IAsyncAction StopCameraAsync();
+  void StopCamera();
 
-  winrt::Windows::Foundation::IAsyncAction TakePictureAsync(
+  void TakePicture(
       std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   // ── Texture helpers ───────────────────────────────────────────────────────
@@ -107,10 +103,24 @@ class FlutterCropCameraPlugin final : public flutter::Plugin {
   int32_t                       pixel_width_  = 0;
   int32_t                       pixel_height_ = 0;
 
+  void RunOnMainThread(std::function<void()> callback);
+  int window_proc_id_ = -1;
+
   FlutterDesktopPixelBuffer     flutter_pixel_buffer_{};
-  std::unique_ptr<FlutterDesktopTextureInfo> texture_info_;
+  std::unique_ptr<flutter::TextureVariant> texture_;
 };
 
 }  // namespace flutter_crop_camera
+
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+FLUTTER_PLUGIN_EXPORT void FlutterCropCameraPluginRegisterWithRegistrar(
+    FlutterDesktopPluginRegistrarRef registrar);
+
+#if defined(__cplusplus)
+}  // extern "C"
+#endif
 
 #endif  // FLUTTER_PLUGIN_FLUTTER_CROP_CAMERA_PLUGIN_H_

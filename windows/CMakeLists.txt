@@ -26,7 +26,7 @@ set_target_properties(${PLUGIN_NAME} PROPERTIES
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
 
 # C++/WinRT requires this flag for coroutine support
-target_compile_options(${PLUGIN_NAME} PRIVATE /await:strict)
+target_compile_options(${PLUGIN_NAME} PRIVATE /await:strict /FS)
 
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
