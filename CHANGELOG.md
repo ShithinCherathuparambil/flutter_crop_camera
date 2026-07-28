@@ -1,3 +1,8 @@
+## 0.6.1
+
+* **macOS**: Restructured macOS plugin implementation to use Swift Package Manager (SPM) structure.
+* **Maintenance**: Aligned iOS and macOS podspec versions with the pubspec.yaml version.
+
 ## 0.6.0
 
 ### Full Desktop & Web Production Support
