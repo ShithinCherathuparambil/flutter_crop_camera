@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'flutter_crop_camera'
-  s.version          = '0.5.0'
+  s.version          = '0.6.0'
   s.summary          = 'A high-performance Flutter camera plugin with a built-in crop editor.'
   s.description      = <<-DESC
 A high-performance Flutter camera plugin with a built-in crop editor, supporting custom aspect ratios, zoom, and orientation locking.
@@ -13,7 +13,7 @@ A high-performance Flutter camera plugin with a built-in crop editor, supporting
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Shithin' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'flutter_crop_camera/Sources/flutter_crop_camera/**/*'
   s.dependency 'FlutterMacOS'
   s.platform = :osx, '10.15'
 
